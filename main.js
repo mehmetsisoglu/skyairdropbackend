@@ -358,7 +358,7 @@ async function claimTokens() {
   const b2 = $("#claimNowBtn");
 
   try {
-    const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI, signer);
+const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI_DATA, signer);
 
     if (b1) b1.textContent="Waiting for signature...";
     if (b2) b2.textContent="Waiting for signature...";
