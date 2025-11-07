@@ -1,120 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Skyline Logic Airdrop</title>
-  <link rel="stylesheet" href="style.css?v=1.6">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skyline Logic Airdrop</title>
+
+    <link rel="stylesheet" href="style.css?v=10009" />
+    <link rel="icon" type="image/png" href="img/skylinelogic_ico.ico" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.8.1/ethers.min.js"></script>
+    <script src="abi.js?v=10009"></script>
+    <script defer src="main.js?v=10009"></script>
 </head>
 
 <body>
 
-  <header class="header">
-    <img src="img/logo.png" class="logo">
-    <h1>Claim Your <span class="skycolor">$SKYL</span></h1>
-    <p class="subtitle">
-      Connect your wallet • Complete tasks • Claim your Skyline Logic airdrop <br>
-      Token: <span class="token">0xa7c4436c2cF6007d03c3067697553bd51562f2c</span>
-    </p>
-  </header>
+<div id="topBanner"></div>
 
-  <section class="countdown-section">
+<header>
+    <img src="img/logo.png" class="logo" alt="Skyline Logic" />
+    <h1>Claim Your <span class="highlight">$SKYL</span></h1>
+    <p>Connect your wallet • Complete tasks • Claim your Skyline Logic airdrop</p>
+    <p class="tokenAddress">Token: 0xa7c4436c2cf6007bd03c3067697553bd51562f2c</p>
+</header>
+
+<section class="airdrop-close-box">
     <h3>Airdrop Closes In</h3>
     <div id="countdown" class="countdown-box">--d --h --m --s</div>
-  </section>
+</section>
 
-  <section class="stats">
-    <div class="stat-box">
-      <label>Airdrop Pool</label>
-      <h2>500,000,000 $SKYL</h2>
+<section class="airdrop-stats">
+    <div class="stat-item">
+        <div class="stat-title">Airdrop Pool</div>
+        <div class="stat-value">500,000,000 $SKYL</div>
     </div>
 
-    <div class="stat-box">
-      <label>Participants</label>
-      <h2>First 5,000 Users</h2>
+    <div class="stat-item">
+        <div class="stat-title">Participants</div>
+        <div class="stat-value">First 5,000 Users</div>
     </div>
 
-    <div class="stat-box">
-      <label>Distribution</label>
-      <h2>Airdrop #1</h2>
+    <div class="stat-item">
+        <div class="stat-title">Distribution</div>
+        <div class="stat-value">Airdrop #1</div>
     </div>
-  </section>
+</section>
 
-  <p class="ends">Ends: December 31, 2025 @ 23:59 UTC</p>
+<p class="airdrop-end-time">Ends: December 31, 2025 @ 23:59 UTC</p>
 
-  <section class="wallet-actions">
-    <button class="btn btn-blue" id="connectBtn">Connect Wallet</button>
-    <button class="btn btn-dark" id="disconnectBtn" style="display:none;">Disconnect</button>
-  </section>
+<section class="wallet-section">
+    <button id="connectWalletBtn" class="btn-primary">Connect Wallet</button>
+    <button id="disconnectWalletBtn" class="btn-secondary" style="display:none;">Disconnect</button>
+</section>
 
-  <button class="btn btn-orange big-claim" id="claimTopBtn" disabled>
-    Complete Tasks to Claim
-  </button>
+<section class="claim-top">
+    <button id="claimTopBtn" class="btn-claim" disabled>Complete Tasks to Claim</button>
+</section>
 
-  <p class="network-status">Network: <span id="netStatus">not connected</span></p>
+<div id="profile-panel" style="display:none;">
+    <p></p>
+</div>
 
-  <!-- Tasks -->
-  <section class="tasks">
+<p id="walletStatus" class="network-status">Network: not connected</p>
+
+<section class="tasks-container">
     <h3>• Complete These Tasks</h3>
 
-    <div class="task">
-      <img src="img/x_3d.png">
-      <div>
-        <p><b>Follow X & Retweet Post</b><br><span class="points">+50 Points</span></p>
-      </div>
-      <button class="btn btn-purple" id="verify-x">Verify</button>
+    <div class="task-item">
+        <img src="img/x_3d.png" class="task-icon" />
+        <div class="task-info">
+            <div class="task-title">Follow X & Retweet Post</div>
+            <div class="task-points">+50 Points</div>
+        </div>
+        <button id="verify-x" class="task-btn">Verify</button>
     </div>
 
-    <div class="task">
-      <img src="img/telegram_3d.png">
-      <div>
-        <p><b>Join our Telegram channel</b><br><span class="points">+10 Points</span></p>
-      </div>
-      <button class="btn btn-purple" id="verify-telegram">Join</button>
+    <div class="task-item">
+        <img src="img/telegram_3d.png" class="task-icon" />
+        <div class="task-info">
+            <div class="task-title">Join our Telegram channel</div>
+            <div class="task-points">+10 Points</div>
+        </div>
+        <button id="verify-telegram" class="task-btn">Join</button>
     </div>
 
-    <div class="task">
-      <img src="img/instagram_3d.png">
-      <div>
-        <p><b>Follow our Instagram</b><br><span class="points">+10 Points</span></p>
-      </div>
-      <button class="btn btn-purple" id="verify-instagram">Follow</button>
+    <div class="task-item">
+        <img src="img/instagram_3d.png" class="task-icon" />
+        <div class="task-info">
+            <div class="task-title">Follow our Instagram</div>
+            <div class="task-points">+10 Points</div>
+        </div>
+        <button id="verify-instagram" class="task-btn">Follow</button>
     </div>
 
-    <button class="btn btn-blue full" id="claimNowBtn" disabled>
-      Complete Tasks to Claim
-    </button>
-  </section>
+    <button id="claimNowBtn" class="btn-claim-bottom" disabled>Complete Tasks to Claim</button>
+</section>
 
-  <div id="claimSuccessPopup" class="popup">
+<!-- Success Popup -->
+<div id="claimSuccessPopup" class="success-popup">
     <div class="popup-box">
-      <h2>✅ Claim Successful!</h2>
-      <p>You have successfully claimed your $SKYL tokens.</p>
-      <button id="closePopup" class="btn btn-blue">OK</button>
+        <h2>✅ Claim Successful</h2>
+        <p>Your $SKYL tokens are on the way!</p>
+        <button onclick="document.getElementById('claimSuccessPopup').style.display='none'" class="popup-close">Close</button>
     </div>
-  </div>
+</div>
 
-  <div id="topBanner"></div>
+<!-- Footer Navigation -->
+<nav class="bottom-nav">
+    <a href="index.html" class="nav-item">
+        <img src="img/icon_home.png" class="nav-icon" />
+        <span>Home</span>
+    </a>
 
-  <!-- Bottom Navigation -->
-  <nav class="bottom-nav">
-    <div class="nav-item active">
-      <img src="img/icon_home.png">
-      <span>Home</span>
-    </div>
+    <a href="airdrop.html" class="nav-item">
+        <img src="img/icon_airdrop.png" class="nav-icon" />
+        <span>Airdrop</span>
+    </a>
 
-    <div class="nav-item">
-      <img src="img/icon_airdrop.png">
-      <span>Airdrop</span>
-    </div>
+    <a href="top10.html" class="nav-item">
+        <img src="img/icon_leaderboard.png" class="nav-icon" />
+        <span>Top 10</span>
+    </a>
+</nav>
 
-    <div class="nav-item">
-      <img src="img/icon_leaderboard.png">
-      <span>Top 10</span>
-    </div>
-  </nav>
-
-  <script src="main.js?v=10016"></script>
 </body>
 </html>
