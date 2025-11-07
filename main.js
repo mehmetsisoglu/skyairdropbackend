@@ -1,5 +1,5 @@
 /* ==========================
-   Skyline Logic Airdrop v1.0 (Stabil + Hardened)
+   Skyline Logic Airdrop v1.0 (Stabil + Hardened + UX Upgrades)
    ========================== */
 
 // ---------- Config ----------
@@ -8,10 +8,16 @@ const DEV_MODE = false; // true yaparsan console loglar açılır.
 // Your Node.js server URL (Render)
 const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com"; 
 
-// Social links (tek yerden yönetim)
+// X Tweet ID (geçici)
+const AIRDROP_TWEET_ID = "1983278116723392817";
+
+// Social links (tek yerden yönetim) + intent URL’leri
 const SOCIAL_URLS = {
   x: "https://x.com/SkylineLogicAI",
+  xFollowIntent: "https://twitter.com/intent/user?screen_name=SkylineLogicAI",
+  xRetweetIntent: `https://twitter.com/intent/retweet?tweet_id=${AIRDROP_TWEET_ID}`,
   telegram: "https://t.me/skylinelogic",
+  telegramDeep: "tg://resolve?domain=skylinelogic",
   instagram: "https://www.instagram.com/skyline.logic",
 };
 
@@ -48,7 +54,7 @@ const AIRDROP_ABI = [
 let provider, signer, airdrop, userWallet = null;
 
 /* ------------------ Utils ------------------ */
-// Fetch with timeout (sessiz takılmaları engeller)
+// Fetch with timeout
 async function fetchWithTimeout(resource, options = {}, timeout = 10000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -61,8 +67,11 @@ async function fetchWithTimeout(resource, options = {}, timeout = 10000) {
     throw e;
   }
 }
-
 function log(...args) { if (DEV_MODE) console.log(...args); }
+
+// küçük yardımcılar
+function $(sel){ return document.querySelector(sel); }
+function $all(sel){ return document.querySelectorAll(sel); }
 
 /* ------------------ Task List ------------------ */
 const TASKS = [
@@ -72,7 +81,81 @@ const TASKS = [
 ];
 let completedTasks = [];
 
-// === AĞ KONTROL VE DEĞİŞTİRME FONKSİYONU ===
+/* ------------------ UX Widgets (dinamik eklenir) ------------------ */
+function ensureUXWidgets() {
+  // Progress bar
+  if (!$("#task-progress")) {
+    const req = document.querySelector(".requirements");
+    if (req) {
+      const box = document.createElement("div");
+      box.id = "task-progress";
+      box.style.cssText = "margin:14px 0 6px; background:#0b1228; border:1px solid #24335e; border-radius:10px; padding:10px;";
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="color:#9fb7ff;font-size:14px;">Your Progress</span>
+          <span id="task-progress-text" style="color:#cfe1ff;font-size:13px;">0 / ${TASKS.length} tasks</span>
+        </div>
+        <div style="width:100%;height:10px;background:#111a3a;border-radius:8px;overflow:hidden;">
+          <div id="task-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#4a67ff,#8338ec);transition:width .25s;"></div>
+        </div>
+      `;
+      req.prepend(box);
+    }
+  }
+
+  // Participants/Remaining sayaç kutusu
+  if (!$("#participants-box")) {
+    const cc = document.querySelector(".countdown-container");
+    if (cc) {
+      const div = document.createElement("div");
+      div.id = "participants-box";
+      div.style.cssText = "margin-top:10px;color:#cfe1ff;font-size:13px;opacity:.95;";
+      div.innerHTML = `
+        <div id="participants-line" style="margin-top:4px;">Participants: -- / 5,000 • Remaining: --</div>
+      `;
+      cc.appendChild(div);
+    }
+  }
+}
+
+function updateProgressBar() {
+  const done = TASKS.filter(t => completedTasks.includes(t.id)).length;
+  const total = TASKS.length;
+  const pct = Math.round((done/total)*100);
+  const txt = $("#task-progress-text");
+  const bar = $("#task-progress-bar");
+  if (txt) txt.textContent = `${done} / ${total} tasks`;
+  if (bar) bar.style.width = `${pct}%`;
+}
+
+async function refreshParticipantsCounter() {
+  // Leaderboard uzunluğu = katılan kullanıcı tahmini (claim değil). Backendten gerçek claim sayacı yoksa bu yaklaşım.
+  try {
+    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/get-leaderboard`);
+    if (!res.ok) throw new Error("Leaderboard fetch failed");
+    const leaders = await res.json();
+    const count = Array.isArray(leaders) ? leaders.length : 0;
+    const max = 5000;
+    const remaining = Math.max(0, max - count);
+    const line = $("#participants-line");
+    if (line) line.textContent = `Participants: ${count.toLocaleString()} / ${max.toLocaleString()} • Remaining: ${remaining.toLocaleString()}`;
+  } catch(e){
+    log("participants refresh error", e);
+  }
+}
+
+function adjustPoolCopyTo500M() {
+  // “Airdrop Pool” satırını bulup 500,000,000 $SKYL yap
+  const stats = document.querySelectorAll(".airdrop-stats .stat-item .stat-title");
+  stats.forEach((titleEl) => {
+    if (titleEl.textContent.trim().toLowerCase() === "airdrop pool") {
+      const valueEl = titleEl.parentElement?.querySelector(".stat-value");
+      if (valueEl) valueEl.textContent = "500,000,000 $SKYL";
+    }
+  });
+}
+
+/* ------------------ Ağ Kontrol ------------------ */
 async function checkAndSwitchNetwork() {
   if (!window.ethereum) return false;
   try {
@@ -115,7 +198,7 @@ async function connectWallet() {
     // UI Update
     const connectBtnEl = document.querySelector(".wallet-actions .btn");
     if (connectBtnEl) connectBtnEl.style.display = "none";
-    document.getElementById("statusMsg").textContent = "Network: Connected";
+    $("#statusMsg").textContent = "Network: Connected";
     showBanner("✅ Wallet connected", "green");
     updateProfilePanel(userWallet);
 
@@ -133,7 +216,6 @@ function disconnectWallet() {
 }
 
 /* ------------------ Task Management ------------------ */
-// Node.js'ten görevleri yükle
 async function loadUserTasks() {
   if (!userWallet) return;
   try {
@@ -143,12 +225,12 @@ async function loadUserTasks() {
     completedTasks = data.tasks || [];
     updateTaskUI();
     checkAllTasksCompleted();
+    updateProgressBar();
   } catch (err) {
     console.warn("⚠️ loadUserTasks failed (Node.js):", err);
   }
 }
 
-// Node.js'e görev kaydet
 async function saveTaskToDB(taskId, btn) {
   try {
     const updatedTasks = [...completedTasks, taskId];
@@ -166,6 +248,9 @@ async function saveTaskToDB(taskId, btn) {
       btn.disabled = true;
       showBanner(`✅ ${taskId.toUpperCase()} verified`, "green");
       checkAllTasksCompleted();
+      updateProgressBar();
+      // sayaç güncelle
+      refreshParticipantsCounter();
     } else {
       throw new Error(result.message || "Unknown Node.js save error");
     }
@@ -193,8 +278,20 @@ async function verifyTask(taskId) {
     return;
   }
 
-  // Ortak: ilgili sosyal sayfayı aç
-  if (SOCIAL_URLS[taskId]) window.open(SOCIAL_URLS[taskId], '_blank');
+  // Ortak: ilgili sosyal sayfayı/intent'i aç
+  if (taskId === 'x') {
+    // önce follow intent ve airdrop retweet intent’i açalım (kullanıcıya kolaylık)
+    window.open(SOCIAL_URLS.xFollowIntent, '_blank');
+    window.open(SOCIAL_URLS.xRetweetIntent, '_blank');
+    // profil linki de dursun
+    window.open(SOCIAL_URLS.x, '_blank');
+  } else if (taskId === 'telegram') {
+    // deep link dene, olmazsa web link
+    try { window.open(SOCIAL_URLS.telegramDeep, '_blank'); } catch {}
+    window.open(SOCIAL_URLS.telegram, '_blank');
+  } else if (taskId === 'instagram') {
+    window.open(SOCIAL_URLS.instagram, '_blank');
+  }
 
   btn.innerText = "Verifying...";
   btn.disabled = true;
@@ -287,7 +384,6 @@ async function claimTokens() {
   const buttons = [ document.getElementById("claimTopBtn"), document.getElementById("claimNowBtn") ];
 
   try {
-    // Kontratı hazırla
     const airdropContract = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI, signer);
 
     // ✅ Ön kontrol: already claimed?
@@ -313,6 +409,9 @@ async function claimTokens() {
         btn.style.background = "linear-gradient(90deg,#00ff99,#00cc66)";
       }
     });
+
+    // başarı sonrası sayaç güncelle
+    refreshParticipantsCounter();
 
   } catch (err) {
     console.error("❌ Claim error:", err);
@@ -367,7 +466,7 @@ function showBanner(msg, color = "red") {
   setTimeout(() => b.classList.remove("show"), 3000);
 }
 
-// Leaderboard'u Node.js'ten yükle
+// Leaderboard
 async function loadLeaderboard() {
   const container = document.getElementById("leaderboard-body");
   if (!container) return;
@@ -384,9 +483,7 @@ async function loadLeaderboard() {
       return;
     }
 
-    // ✅ Güvenli sıralama
     leaders.sort((a,b) => (b.points||0) - (a.points||0));
-
     const medals = ['🏆', '🥈', '🥉'];
     leaders.forEach((leader, index) => {
       const row = document.createElement("div");
@@ -407,6 +504,12 @@ async function loadLeaderboard() {
 
 /* ------------------ Init ------------------ */
 document.addEventListener("DOMContentLoaded", () => {
+  // UX widget’ları kur
+  ensureUXWidgets();
+  adjustPoolCopyTo500M();
+  refreshParticipantsCounter();
+  setInterval(refreshParticipantsCounter, 30000); // 30sn’de bir güncelle
+
   // Event Listeners
   const connectBtn = document.querySelector(".wallet-actions .btn");
   const disconnectBtn = document.getElementById("disconnectWalletBtn");
@@ -432,9 +535,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (verifyTelegramBtn) verifyTelegramBtn.addEventListener("click", () => verifyTask('telegram'));
   if (verifyInstagramBtn) verifyInstagramBtn.addEventListener("click", () => verifyTask('instagram'));
 
-  if (closePopupBtn) closePopupBtn.addEventListener("click", () => {
-    document.getElementById("claimSuccessPopup").style.display = "none";
-  });
+  if (closePopupBtn) {
+    closePopupBtn.addEventListener("click", () => {
+      document.getElementById("claimSuccessPopup").style.display = "none";
+    });
+  }
 
   // Navigation
   const navItems = document.querySelectorAll(".nav-item");
@@ -452,6 +557,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   updateTaskUI();
   checkAllTasksCompleted();
+  updateProgressBar();
   startCountdown();
 });
 
@@ -470,7 +576,6 @@ function startCountdown() {
     if (distance < 0) {
       clearInterval(interval);
       countdownElement.innerHTML = "Airdrop Ended";
-      // ✅ Bitişten sonra claim kilidi
       [claimBtn, claimNowBtn].forEach(btn => { if (btn) { btn.disabled = true; btn.textContent = "Airdrop Ended"; } });
       return;
     }
