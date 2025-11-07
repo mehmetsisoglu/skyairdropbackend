@@ -1,489 +1,150 @@
-/* ==========================
-   Skyline Logic Airdrop v1.0 (Stabil + Hardened)
-   ========================== */
-
-// ---------- Config ----------
-const DEV_MODE = false; // true yaparsan console loglar açılır.
-
-// Your Node.js server URL (Render)
-const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com"; 
-
-// Social links (tek yerden yönetim)
-const SOCIAL_URLS = {
-  x: "https://x.com/SkylineLogicAI",
-  telegram: "https://t.me/skylinelogic",
-  instagram: "https://www.instagram.com/skyline.logic",
-};
-
-// Contracts
-const AIRDROP_CONTRACT = "0x316549D421e454e08040efd8b7d331C7e5946724";
-const TOKEN_CONTRACT   = "0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c";
-
-// Network (BNB Smart Chain)
-const REQUIRED_CHAIN_ID = '0x38'; // 56 (BNB Mainnet)
-const BNB_CHAIN_PARAMS = {
-  chainId: '0x38',
-  chainName: 'BNB Smart Chain',
-  nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-  rpcUrls: ['https://bsc-dataseed.binance.org/'],
-  blockExplorerUrls: ['https://bscscan.com']
-};
-
-// Airdrop ABI
-const AIRDROP_ABI = [
-  {"inputs":[{"internalType":"address","name":"_token","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},
-  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"wallet","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"AirdropClaimed","type":"event"},
-  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"WithdrawRemaining","type":"event"},
-  {"inputs":[],"name":"amountPerWallet","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"claimed","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"claimAirdrop","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"newAmount","type":"uint256"}],"name":"setAmountPerWallet","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"token","outputs":[{"internalType":"contract IERC20","name":"","type":"address"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"withdrawRemainingTokens","outputs":[],"stateMutability":"nonpayable","type":"function"}
-];
-
-// ---------- State ----------
-let provider, signer, airdrop, userWallet = null;
-
-/* ------------------ Utils ------------------ */
-// Fetch with timeout (sessiz takılmaları engeller)
-async function fetchWithTimeout(resource, options = {}, timeout = 10000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const res = await fetch(resource, { ...options, signal: controller.signal });
-    clearTimeout(id);
-    return res;
-  } catch (e) {
-    clearTimeout(id);
-    throw e;
-  }
-}
-
-function log(...args) { if (DEV_MODE) console.log(...args); }
-
-/* ------------------ Task List ------------------ */
-const TASKS = [
-  { id: "x",         label: "Follow our X account & retweet the airdrop post", btnText: "Verify" },
-  { id: "telegram",  label: "Join our Telegram channel",                        btnText: "Join"   },
-  { id: "instagram", label: "Follow our Instagram and repost the airdrop post", btnText: "Follow" }
-];
-let completedTasks = [];
-
-// === AĞ KONTROL VE DEĞİŞTİRME FONKSİYONU ===
-async function checkAndSwitchNetwork() {
-  if (!window.ethereum) return false;
-  try {
-    const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
-    if (currentChainId === REQUIRED_CHAIN_ID) return true;
-
-    showBanner("Please switch to BNB Smart Chain", "red");
-    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: REQUIRED_CHAIN_ID }] });
-    return true;
-  } catch (switchError) {
-    if (switchError.code === 4902) {
-      try {
-        await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [BNB_CHAIN_PARAMS] });
-        return true;
-      } catch (addError) {
-        console.error("Failed to add BNB chain:", addError);
-        return false;
-      }
-    }
-    console.error("Failed to switch network:", switchError);
-    return false;
-  }
-}
-
-/* ------------------ Wallet Connection ------------------ */
-async function connectWallet() {
-  try {
-    if (!window.ethereum) {
-      showModal("Please install MetaMask or open this page in a Web3-enabled browser.");
-      return;
-    }
-    provider = new ethers.BrowserProvider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    signer = await provider.getSigner();
-    userWallet = (await signer.getAddress()).toLowerCase();
-
-    const networkOK = await checkAndSwitchNetwork();
-    if (!networkOK) showBanner("Please connect to BNB Smart Chain to continue.", "red");
-    
-    // UI Update
-    const connectBtnEl = document.querySelector(".wallet-actions .btn");
-    if (connectBtnEl) connectBtnEl.style.display = "none";
-    document.getElementById("statusMsg").textContent = "Network: Connected";
-    showBanner("✅ Wallet connected", "green");
-    updateProfilePanel(userWallet);
-
-    await loadUserTasks();
-  } catch (err) {
-    console.error("Wallet connection failed:", err);
-    showBanner("⚠️ Wallet connection failed", "red");
-  }
-}
-
-function disconnectWallet() {
-  provider = signer = airdrop = null;
-  userWallet = null;
-  location.reload();
-}
-
-/* ------------------ Task Management ------------------ */
-// Node.js'ten görevleri yükle
-async function loadUserTasks() {
-  if (!userWallet) return;
-  try {
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/get-tasks?wallet=${userWallet}`);
-    if (!res.ok) throw new Error(`Server error: ${res.statusText}`);
-    const data = await res.json();
-    completedTasks = data.tasks || [];
-    updateTaskUI();
-    checkAllTasksCompleted();
-  } catch (err) {
-    console.warn("⚠️ loadUserTasks failed (Node.js):", err);
-  }
-}
-
-// Node.js'e görev kaydet
-async function saveTaskToDB(taskId, btn) {
-  try {
-    const updatedTasks = [...completedTasks, taskId];
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/save-tasks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet: userWallet, tasks: updatedTasks })
-    });
-    const result = await res.json();
-
-    if (result.success) {
-      completedTasks = updatedTasks;
-      btn.innerText = "Completed ✅";
-      btn.style.background = "linear-gradient(90deg,#00ff99,#00cc66)";
-      btn.disabled = true;
-      showBanner(`✅ ${taskId.toUpperCase()} verified`, "green");
-      checkAllTasksCompleted();
-    } else {
-      throw new Error(result.message || "Unknown Node.js save error");
-    }
-  } catch (err) {
-    console.error("Node.js Save error:", err);
-    const task = TASKS.find(t => t.id === taskId);
-    btn.innerText = task ? task.btnText : "Verify";
-    btn.disabled = false;
-    showBanner("⚠️ Task could not be saved (Node.js): " + err.message, "red");
-  }
-}
-
-async function verifyTask(taskId) {
-  if (!userWallet) {
-    showBanner("⚠️ Connect your wallet first", "red");
-    return;
-  }
-  const btnId = `verify-${taskId}`;
-  const btn = document.getElementById(btnId);
-  if (!btn) { console.warn(`❌ Button not found: ${btnId}`); return; }
-  const task = TASKS.find(t => t.id === taskId);
-
-  if (completedTasks.includes(taskId)) {
-    showModal("This task is already completed ✅");
-    return;
-  }
-
-  // Ortak: ilgili sosyal sayfayı aç
-  if (SOCIAL_URLS[taskId]) window.open(SOCIAL_URLS[taskId], '_blank');
-
-  btn.innerText = "Verifying...";
-  btn.disabled = true;
-
-  // X doğrulaması (API)
-  if (taskId === 'x') {
-    try {
-      const username = prompt("Please enter your X (Twitter) username (without the @):");
-      if (!username) {
-        btn.innerText = task ? task.btnText : "Verify";
-        btn.disabled = false;
-        return; 
-      }
-      btn.innerText = "Checking X...";
-
-      const apiRes = await fetchWithTimeout(`${NODE_SERVER_URL}/verify-x`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim() })
-      });
-
-      const apiData = await apiRes.json();
-      if (!apiRes.ok) {
-        const msg = apiData.message || apiData.error || 'X verification failed';
-        throw new Error(msg);
-      }
-
-      btn.innerText = "Saving...";
-      await saveTaskToDB(taskId, btn);
-
-    } catch (err) {
-      console.error("X Verification error:", err);
-      btn.innerText = task ? task.btnText : "Verify";
-      btn.disabled = false;
-      showBanner("❌ X Verification Failed: " + (err.message || "Network error"), "red");
-    }
-  } 
-  // Diğer görevler (güvene dayalı)
-  else {
-    btn.innerText = "Saving...";
-    await saveTaskToDB(taskId, btn);
-  }
-}
-
-/* ------------------ UI Updates ------------------ */
-function updateTaskUI() {
-  TASKS.forEach((task) => {
-    const btn = document.getElementById(`verify-${task.id}`);
-    if (!btn) return;
-    if (completedTasks.includes(task.id)) {
-      btn.innerText = "Completed ✅";
-      btn.disabled = true;
-      btn.style.background = "linear-gradient(90deg,#00ff99,#00cc66)";
-    } else {
-      btn.innerText = task.btnText;
-      btn.disabled = false;
-      btn.style.background = "linear-gradient(90deg,#4a67ff,#8338ec)";
-    }
-  });
-}
-
-function checkAllTasksCompleted() {
-  const claimBtn = document.getElementById("claimTopBtn");
-  const claimNowBtn = document.getElementById("claimNowBtn");
-  if (!claimBtn || !claimNowBtn) return false;
-
-  const all = TASKS.every((t) => completedTasks.includes(t.id));
-  const buttons = [claimBtn, claimNowBtn];
-
-  if (all) {
-    buttons.forEach(btn => { btn.disabled = false; btn.textContent = "🚀 Claim $SKYL"; });
-    document.getElementById("airdropStatus").textContent = "All tasks completed! You are eligible to claim.";
-    showBanner("🎯 All tasks completed! You can claim now.", "green");
-    return true;
-  } else {
-    buttons.forEach(btn => { btn.disabled = true; btn.textContent = "Complete Tasks to Claim"; });
-    document.getElementById("airdropStatus").textContent = "Complete all tasks to become eligible.";
-    return false;
-  }
-}
-
-/* ------------------ Claim Process (GERÇEK İŞLEM) ------------------ */
-async function claimTokens() {
-  if (!userWallet || !signer) { showBanner("⚠️ Connect your wallet first", "red"); return; }
-  if (!checkAllTasksCompleted()) { showBanner("⚠️ Complete all tasks before claiming.", "red"); return; }
-
-  const networkOK = await checkAndSwitchNetwork();
-  if (!networkOK) { showBanner("Please switch to BNB Smart Chain to claim.", "red"); return; }
-
-  const buttons = [ document.getElementById("claimTopBtn"), document.getElementById("claimNowBtn") ];
-
-  try {
-    // Kontratı hazırla
-    const airdropContract = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI, signer);
-
-    // ✅ Ön kontrol: already claimed?
-    try {
-      const already = await airdropContract.claimed(userWallet);
-      if (already) { showBanner("⚠️ You have already claimed this airdrop.", "red"); return; }
-    } catch (e) { log("claimed() precheck fail (non-fatal):", e); }
-
-    buttons.forEach(btn => { if (btn) { btn.disabled = true; btn.innerText = "Waiting for signature..."; } });
-
-    const tx = await airdropContract.claimAirdrop();
-
-    buttons.forEach(btn => { if (btn) btn.innerText = "Transaction pending..."; });
-    showBanner("Transaction submitted! Waiting for confirmation...", "green");
-
-    await tx.wait();
-
-    document.getElementById("claimSuccessPopup").style.display = "flex";
-    buttons.forEach(btn => {
-      if (btn) {
-        btn.disabled = true;
-        btn.innerText = "✅ Claimed";
-        btn.style.background = "linear-gradient(90deg,#00ff99,#00cc66)";
-      }
-    });
-
-  } catch (err) {
-    console.error("❌ Claim error:", err);
-    let errorMessage = "❌ Claim failed. Please try again.";
-    if (err.code === 'ACTION_REJECTED') errorMessage = "⚠️ Transaction was rejected.";
-    else if (err?.data?.message?.includes("Already claimed") || err?.message?.includes("Already claimed"))
-      errorMessage = "⚠️ You have already claimed this airdrop.";
-    else if (err?.data?.message?.includes("Insufficient airdrop balance"))
-      errorMessage = "❌ Airdrop pool is empty. Please contact support.";
-
-    showBanner(errorMessage, "red");
-    buttons.forEach(btn => { if (btn) { btn.disabled = false; btn.innerText = "🚀 Claim $SKYL"; } });
-  }
-}
-
-/* ------------------ Helper Functions ------------------ */
-function updateProfilePanel(addr) {
-  const panel = document.getElementById("profile-panel");
-  if (!panel) return;
-  if (addr) {
-    panel.style.display = "block";
-    panel.querySelector("p").textContent = "Wallet: " + addr.slice(0, 6) + "..." + addr.slice(-4);
-  } else {
-    panel.style.display = "none";
-  }
-}
-
-function showModal(message) {
-  const overlay = document.getElementById("modalOverlay");
-  if (!overlay) return;
-  overlay.innerHTML = `
-    <div class="modal-box">
-      <p>${message}</p>
-      <button class="btn" onclick="closeModal()">OK</button>
-    </div>`;
-  overlay.style.display = "flex";
-}
-
-function closeModal() {
-  const overlay = document.getElementById("modalOverlay");
-  if (overlay) overlay.style.display = "none";
-}
-
-function showBanner(msg, color = "red") {
-  const b = document.getElementById("topBanner");
-  b.textContent = msg;
-  b.style.background =
-    color === "green"
-      ? "linear-gradient(90deg, rgba(0,200,100,.9), rgba(0,150,50,.9))"
-      : "linear-gradient(90deg, rgba(255,0,0,.9), rgba(255,100,0,.9))";
-  b.classList.add("show");
-  setTimeout(() => b.classList.remove("show"), 3000);
-}
-
-// Leaderboard'u Node.js'ten yükle
-async function loadLeaderboard() {
-  const container = document.getElementById("leaderboard-body");
-  if (!container) return;
-
-  try {
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/get-leaderboard`); 
-    if (!res.ok) throw new Error("Could not load leaderboard data.");
-
-    const leaders = await res.json(); 
-    container.innerHTML = ""; 
-
-    if (!leaders || leaders.length === 0) {
-      container.innerHTML = `<p class="leaderboard-loading">No participants yet. Be the first!</p>`;
-      return;
-    }
-
-    // ✅ Güvenli sıralama
-    leaders.sort((a,b) => (b.points||0) - (a.points||0));
-
-    const medals = ['🏆', '🥈', '🥉'];
-    leaders.forEach((leader, index) => {
-      const row = document.createElement("div");
-      row.className = "leaderboard-row";
-      const shortWallet = leader.wallet.slice(0, 6) + "..." + leader.wallet.slice(-4);
-      row.innerHTML = `
-        <span>${medals[index] || (index + 1)}</span>
-        <span>${shortWallet}</span>
-        <span>${leader.points}</span>`;
-      container.appendChild(row);
-    });
-
-  } catch (err) {
-    console.error("Leaderboard load failed:", err);
-    container.innerHTML = `<p class="leaderboard-loading" style="color:red;">Error loading leaderboard.</p>`;
-  }
-}
-
-/* ------------------ Init ------------------ */
-document.addEventListener("DOMContentLoaded", () => {
-  // Event Listeners
-  const connectBtn = document.querySelector(".wallet-actions .btn");
-  const disconnectBtn = document.getElementById("disconnectWalletBtn");
-  const claimTopBtn = document.getElementById("claimTopBtn");
-  const claimNowBtn = document.getElementById("claimNowBtn");
-  const closePopupBtn = document.getElementById("closePopup");
-
-  // Verify Buttons
-  const verifyXBtn = document.getElementById("verify-x");
-  const verifyTelegramBtn = document.getElementById("verify-telegram");
-  const verifyInstagramBtn = document.getElementById("verify-instagram");
-
-  if (!verifyXBtn) console.warn("❌ verify-x button NOT FOUND");
-  if (!verifyTelegramBtn) console.warn("❌ verify-telegram button NOT FOUND");
-  if (!verifyInstagramBtn) console.warn("❌ verify-instagram button NOT FOUND");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skyline Logic Airdrop</title>
+  <link rel="icon" type="image/x-icon" href="img/skylinelogic_ico.ico" />
   
-  if (connectBtn) connectBtn.addEventListener("click", connectWallet);
-  if (disconnectBtn) disconnectBtn.addEventListener("click", disconnectWallet);
-  if (claimTopBtn) claimTopBtn.addEventListener("click", claimTokens);
-  if (claimNowBtn) claimNowBtn.addEventListener("click", claimTokens);
+  <link rel="stylesheet" href="style.css?v=2.2" />
   
-  if (verifyXBtn) verifyXBtn.addEventListener("click", () => verifyTask('x'));
-  if (verifyTelegramBtn) verifyTelegramBtn.addEventListener("click", () => verifyTask('telegram'));
-  if (verifyInstagramBtn) verifyInstagramBtn.addEventListener("click", () => verifyTask('instagram'));
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.6.0/ethers.umd.min.js"></script>
+</head>
 
-  if (closePopupBtn) closePopupBtn.addEventListener("click", () => {
-    document.getElementById("claimSuccessPopup").style.display = "none";
-  });
+<body>
+  <div id="profile-panel">
+    <p>Wallet: 0x...</p>
+    <button id="disconnectWalletBtn" class="btn">Disconnect</button>
+  </div>
 
-  // Navigation
-  const navItems = document.querySelectorAll(".nav-item");
-  const sections = document.querySelectorAll(".section");
+  <section id="home" class="section active">
+    <header>
+      <img src="img/logo.png" alt="Skyline Logic Logo" />
+      <h1>Claim Your <span>$SKYL</span></h1>
+      <p class="subtitle">Connect your wallet • Complete tasks • Claim your Skyline Logic airdrop</p>
+      <p class="subtitle" style="margin-top:-8px;color:#7ea1ff;">
+        Token: <code style="color:#cfe1ff;">0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c</code>
+      </p>
+    </header>
 
-  navItems.forEach(item => {
-    item.addEventListener("click", () => {
-      const targetId = item.getAttribute("data-target");
-      navItems.forEach(i => i.classList.remove("active"));
-      item.classList.add("active");
-      sections.forEach(s => { s.classList.remove("active"); if (s.id === targetId) s.classList.add("active"); });
-      if (targetId === 'leaderboard') loadLeaderboard();
-    });
-  });
+    <div class="countdown-container">
+      <div class="countdown-title">Airdrop Closes In</div>
+      <div class="countdown">
+        <span id="countdown">--d --h --m --s</span>
+      </div>
+      
+      <div class="airdrop-stats">
+        <div class="stat-item">
+          <span class="stat-title">Airdrop Pool</span>
+          <span class="stat-value">100,000,000 $SKYL</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-title">Participants</span>
+          <span class="stat-value">First 5,000 Users</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-title">Distribution</span>
+          <span class="stat-value">Airdrop #1</span>
+        </div>
+      </div>
+      
+      <p class="countdown-end-date">Ends: December 31, 2025 @ 23:59 UTC</p>
+    </div>
 
-  updateTaskUI();
-  checkAllTasksCompleted();
-  startCountdown();
-});
+    <div class="wallet-actions">
+      <button class="btn">
+        <img src="img/icon_wallet.png" alt="Wallet" style="height:20px;vertical-align:middle;margin-right:6px;">
+        Connect Wallet
+      </button>
+      <button id="claimTopBtn" class="btn" disabled>
+        <img src="img/icon_leaderboard.png" alt="Claim" style="height:20px;vertical-align:middle;margin-right:6px;">
+        Complete Tasks to Claim
+      </button>
+      <p id="statusMsg">Network: not connected</p>
+    </div>
+    <section class="requirements">
+      <h2>◆ Complete These Tasks</h2>
+      
+      <div class="task">
+        <img src="img/x_3d.png" alt="x" />
+        <div class="task-description">
+          <p>Follow X & Retweet Post</p>
+          <small>+50 Points</small>
+        </div>
+        <button class="btn" id="verify-x">Verify</button>
+      </div>
+      
+      <div class="task">
+        <img src="img/telegram_3d.png" alt="telegram" />
+        <div class="task-description">
+          <p>Join our Telegram channel</p>
+          <small>+10 Points</small>
+        </div>
+        <button class="btn" id="verify-telegram">Join</button>
+      </div>
+      
+      <div class="task">
+        <img src="img/instagram_3d.png" alt="instagram" />
+        <div class="task-description">
+          <p>Follow our Instagram</p>
+          <small>+10 Points</small>
+        </div>
+        <button class="btn" id="verify-instagram">Follow</button>
+      </div>
+    </section>
 
-/* ------------------ Countdown Function ------------------ */
-function startCountdown() {
-  const countDownDate = new Date("2025-12-31T23:59:59Z").getTime(); 
-  const countdownElement = document.getElementById("countdown");
-  const claimBtn = document.getElementById("claimTopBtn");
-  const claimNowBtn = document.getElementById("claimNowBtn");
-  if (!countdownElement) return;
+  </section>
 
-  const interval = setInterval(() => {
-    const now = new Date().getTime();
-    const distance = countDownDate - now;
+  <section id="airdrop" class="section">
+    <div class="airdrop-container">
+      <h2 style="color:var(--c-brand-sky);margin-top:0;">🎯 Skyline Airdrop</h2>
+      <p id="airdropStatus" style="color:var(--c-text-subtle);margin:6px 0 14px;">Connect your wallet to check eligibility.</p>
+      <button id="claimNowBtn" class="btn" disabled>Complete Tasks to Claim</button>
+      <p id="claimResult" style="color:var(--c-text-subtle);margin-top:16px;"></p>
+    </div>
+  </section>
 
-    if (distance < 0) {
-      clearInterval(interval);
-      countdownElement.innerHTML = "Airdrop Ended";
-      // ✅ Bitişten sonra claim kilidi
-      [claimBtn, claimNowBtn].forEach(btn => { if (btn) { btn.disabled = true; btn.textContent = "Airdrop Ended"; } });
-      return;
-    }
+  <section id="leaderboard" class="section">
+    <div class="leaderboard-container">
+      <h2 style="color:var(--c-brand-sky);margin-top:0;">🏆 Top Participants</h2>
+      <div class="leaderboard-table-header">
+        <span>Rank</span>
+        <span>User</span>
+        <span>Points</span>
+      </div>
+      <div id="leaderboard-body">
+        <p class="leaderboard-loading">Loading leaderboard...</p>
+      </div>
+    </div>
+  </section>
 
-    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
 
-    countdownElement.innerHTML =
-      days + "d " +
-      hours.toString().padStart(2, "0") + "h " + 
-      minutes.toString().padStart(2, "0") + "m " +
-      seconds.toString().padStart(2, "0") + "s ";
-  }, 1000);
-}
+  <footer>© 2025 Skyline Logic — All rights reserved.</footer>
+
+  <div id="topBanner"></div>
+  
+  <div id="modalOverlay"></div>
+
+  <div id="claimSuccessPopup" class="popup-overlay">
+    <div class="popup-box">
+      <h2>🎉 Claim Successful!</h2>
+      <p>You’ve received your $SKYL tokens.</p>
+      <button id="closePopup" class="btn">OK</button>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <div class="nav-item active" data-target="home">
+      <img src="img/icon_home.png" alt="Home"><span>Home</span>
+    </div>
+    <div class="nav-item" data-target="airdrop">
+      <img src="img/icon_airdrop.png" alt="Airdrop"><span>Airdrop</span>
+    </div>
+    <div class="nav-item" data-target="leaderboard">
+      <img src="img/icon_leaderboard.png" alt="Leaderboard"><span>Top 10</span>
+    </div>
+  </div>
+
+  <script src="main.js?v=2.1"></script>
+</body>
+</html>
