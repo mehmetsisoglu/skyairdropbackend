@@ -1,25 +1,15 @@
 {
-  "name": "skylinklogic",
-  "version": "1.0.0",
-  "description": "Skyline Logic Airdrop Backend Server",
-  "main": "server.js",
+  "name": "skyl-airdrop-backend",
+  "version": "1.1.0",
   "type": "module",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "keywords": [
-    "airdrop",
-    "crypto",
-    "skylinklogic",
-    "web3"
-  ],
-  "author": "Mehmet Sisoglu",
-  "license": "MIT",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "node-fetch": "^3.3.2",
-    "pg": "^8.16.3"
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "node-fetch": "^3.3.2"
   }
 }
