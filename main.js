@@ -1,6 +1,5 @@
 /* ==========================
-   Skyline Logic Airdrop v3
-   Stabil • Hardened • Countdown Fixed
+   Skyline Logic Airdrop v1.0 (Stabil + Hardened + UX Upgrades)
    ========================== */
 
 // ---------- Config ----------
@@ -9,7 +8,7 @@ const DEV_MODE = false;
 // Backend (Render)
 const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com";
 
-// X Tweet ID
+// Tweet ID
 const AIRDROP_TWEET_ID = "1983278116723392817";
 
 // Social links + intents
@@ -76,35 +75,6 @@ const TASKS = [
   { id:"instagram", label:"Follow our Instagram", btnText:"Follow" }
 ];
 
-/* ------------------ Countdown ------------------ */
-function startCountdown() {
-  const countdownElement = document.getElementById("countdown");
-  if (!countdownElement) return;
-
-  const target = new Date("2025-12-31T23:59:59Z").getTime();
-
-  function update() {
-    const now = Date.now();
-    const diff = target - now;
-
-    if (diff <= 0) {
-      countdownElement.textContent = "Airdrop Ended";
-      return;
-    }
-
-    const d = Math.floor(diff / 86400000);
-    const h = Math.floor((diff % 86400000) / 3600000);
-    const m = Math.floor((diff % 3600000) / 60000);
-    const s = Math.floor((diff % 60000) / 1000);
-
-    countdownElement.textContent =
-      `${d}d ${String(h).padStart(2,"0")}h ${String(m).padStart(2,"0")}m ${String(s).padStart(2,"0")}s`;
-  }
-
-  update();
-  setInterval(update, 1000);
-}
-
 /* ------------------ Pool Fix ------------------ */
 function adjustPoolCopyTo500M() {
   const stats = document.querySelectorAll(".airdrop-stats .stat-item .stat-title");
@@ -115,6 +85,38 @@ function adjustPoolCopyTo500M() {
     }
   });
 }
+
+/* ------------------ GLOBAL COUNTDOWN ------------------ */
+window.startCountdown = function () {
+
+  const el = document.getElementById("countdown");
+  if (!el) {
+    console.log("Countdown element not found.");
+    return;
+  }
+
+  const target = new Date("2025-12-31T23:59:59Z").getTime();
+
+  function tick() {
+    const now = Date.now();
+    const diff = target - now;
+
+    if (diff <= 0) {
+      el.textContent = "Airdrop Ended";
+      return;
+    }
+
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+
+    el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+  }
+
+  tick();
+  setInterval(tick, 1000);
+};
 
 /* ------------------ Wallet Connection ------------------ */
 async function checkAndSwitchNetwork() {
@@ -241,7 +243,7 @@ async function verifyTask(taskId) {
       const r = await fetchWithTimeout(`${NODE_SERVER_URL}/verify-x`, {
         method:'POST',
         headers:{ "Content-Type": "application/json" },
-        body:JSON.stringify({ username:username.trim(), wallet:userWallet })
+        body:JSON.stringify({ username:username.trim() })
       });
       const d = await r.json();
 
@@ -364,7 +366,6 @@ async function claimTokens() {
 document.addEventListener("DOMContentLoaded",() => {
 
   adjustPoolCopyTo500M();
-  startCountdown();
 
   const connectBtn = document.querySelector(".wallet-actions .btn");
   if (connectBtn) connectBtn.addEventListener("click", connectWallet);
@@ -379,4 +380,7 @@ document.addEventListener("DOMContentLoaded",() => {
   $("#verify-x")?.addEventListener("click",()=>verifyTask("x"));
   $("#verify-telegram")?.addEventListener("click",()=>verifyTask("telegram"));
   $("#verify-instagram")?.addEventListener("click",()=>verifyTask("instagram"));
+
+  // ✅ Countdown başlat
+  window.startCountdown();
 });
