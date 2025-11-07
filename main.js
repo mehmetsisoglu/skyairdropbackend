@@ -1,5 +1,6 @@
 /* ==========================
-   Skyline Logic Airdrop v1.0 (Stabil + Hardened + UX Upgrades)
+   Skyline Logic Airdrop v3
+   Stabil • Hardened • Countdown Fixed
    ========================== */
 
 // ---------- Config ----------
@@ -8,7 +9,7 @@ const DEV_MODE = false;
 // Backend (Render)
 const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com";
 
-// X Tweet ID (geçici)
+// X Tweet ID
 const AIRDROP_TWEET_ID = "1983278116723392817";
 
 // Social links + intents
@@ -74,6 +75,35 @@ const TASKS = [
   { id:"telegram", label:"Join our Telegram channel", btnText:"Join" },
   { id:"instagram", label:"Follow our Instagram", btnText:"Follow" }
 ];
+
+/* ------------------ Countdown ------------------ */
+function startCountdown() {
+  const countdownElement = document.getElementById("countdown");
+  if (!countdownElement) return;
+
+  const target = new Date("2025-12-31T23:59:59Z").getTime();
+
+  function update() {
+    const now = Date.now();
+    const diff = target - now;
+
+    if (diff <= 0) {
+      countdownElement.textContent = "Airdrop Ended";
+      return;
+    }
+
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+
+    countdownElement.textContent =
+      `${d}d ${String(h).padStart(2,"0")}h ${String(m).padStart(2,"0")}m ${String(s).padStart(2,"0")}s`;
+  }
+
+  update();
+  setInterval(update, 1000);
+}
 
 /* ------------------ Pool Fix ------------------ */
 function adjustPoolCopyTo500M() {
@@ -211,7 +241,7 @@ async function verifyTask(taskId) {
       const r = await fetchWithTimeout(`${NODE_SERVER_URL}/verify-x`, {
         method:'POST',
         headers:{ "Content-Type": "application/json" },
-        body:JSON.stringify({ username:username.trim() })
+        body:JSON.stringify({ username:username.trim(), wallet:userWallet })
       });
       const d = await r.json();
 
@@ -332,7 +362,9 @@ async function claimTokens() {
 
 /* ------------------ Init ------------------ */
 document.addEventListener("DOMContentLoaded",() => {
+
   adjustPoolCopyTo500M();
+  startCountdown();
 
   const connectBtn = document.querySelector(".wallet-actions .btn");
   if (connectBtn) connectBtn.addEventListener("click", connectWallet);
