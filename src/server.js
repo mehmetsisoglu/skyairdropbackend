@@ -192,12 +192,10 @@ function scoreContext({ ip, fp }) {
 
 /* ---------- Endpoints ---------- */
 
-// ✅ Leaderboard
 app.get("/get-leaderboard", (req, res) => {
   res.json(loadJSON(leaderboardFile, []));
 });
 
-// ✅ Tasks get
 app.get("/get-tasks", (req, res) => {
   const wallet = (req.query.wallet || "").toLowerCase();
   if (!wallet) return res.json({ tasks: [] });
@@ -206,7 +204,6 @@ app.get("/get-tasks", (req, res) => {
   res.json({ tasks: db[wallet] || [] });
 });
 
-// ✅ Task save
 app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   const { wallet, tasks, fp } = req.body || {};
   if (!wallet || !Array.isArray(tasks))
@@ -238,7 +235,6 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   res.json({ success: true });
 });
 
-// ✅ X verify
 app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   try {
     const { username, wallet, fp } = req.body || {};
@@ -252,20 +248,17 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
     if (!bearer || !tweetId)
       return res.status(500).json({ message: "X API not configured" });
 
-    // 1) User info
     const userRes = await fetch(
       `https://api.twitter.com/2/users/by/username/${encodeURIComponent(
         username
       )}?user.fields=created_at,public_metrics,profile_image_url`,
-      {
-        headers: { Authorization: `Bearer ${bearer}` },
-      }
+      { headers: { Authorization: `Bearer ${bearer}` } }
     );
+
     const userData = await userRes.json();
     const user = userData?.data;
     if (!user) return res.status(400).json({ message: "User not found" });
 
-    // 2) Retweet check
     const rtRes = await fetch(
       `https://api.twitter.com/2/tweets/${tweetId}/retweeted_by?max_results=100`,
       { headers: { Authorization: `Bearer ${bearer}` } }
@@ -275,7 +268,6 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
 
     if (!didRT) return res.status(400).json({ message: "Retweet not found" });
 
-    // 3) Risk Score
     const twitterScore = scoreTwitterUser(user);
     const ctxScore = scoreContext({ ip, fp });
     const risk = twitterScore + ctxScore;
@@ -283,10 +275,7 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
     return res.json({
       success: true,
       risk,
-      user: {
-        id: user.id,
-        username: user.username,
-      },
+      user: { id: user.id, username: user.username },
     });
   } catch (err) {
     console.error("verify-x error:", err);
@@ -294,7 +283,6 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   }
 });
 
-// ✅ Pre-claim (opsiyonel)
 app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   const { wallet, fp } = req.body || {};
   const ip = getIp(req);
@@ -303,7 +291,6 @@ app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   res.json({ ok: !hardBlock, risk });
 });
 
-// ✅ Health
 app.get("/health", (req, res) => res.send("OK"));
 
 /* ---------- Start ---------- */
