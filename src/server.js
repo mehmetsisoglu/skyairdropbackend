@@ -291,6 +291,23 @@ app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   res.json({ ok: !hardBlock, risk });
 });
 
+/* ---------- NEW: Airdrop Stats ---------- */
+app.get("/airdrop-stats", (req, res) => {
+  try {
+    const db = loadJSON(tasksFile, {});
+    const participants = Object.keys(db).length;
+    const maxUsers = 5000;
+
+    res.json({
+      participants,
+      remaining: Math.max(0, maxUsers - participants),
+    });
+  } catch (err) {
+    console.error("stats error:", err);
+    res.status(500).json({ error: "stats_error" });
+  }
+});
+
 app.get("/health", (req, res) => res.send("OK"));
 
 /* ---------- Start ---------- */
