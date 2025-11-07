@@ -1,147 +1,127 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Skyline Logic Airdrop</title>
-  <link rel="icon" href="skylinelogic_ico.ico">
-  <link rel="stylesheet" href="style.css?v=3"/>
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js"></script>
+  <link rel="stylesheet" href="style.css?v=1.5">
+
+  <!-- Ethers -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+
 </head>
 <body>
 
+  <header class="header">
+    <img src="img/logo.png" class="logo">
+    <h1>Claim Your <span class="skycolor">$SKYL</span></h1>
+    <p class="subtitle">
+      Connect your wallet • Complete tasks • Claim your Skyline Logic airdrop <br>
+      Token: <span class="token">0xa7c4436c2cF6007d03c3067697553bd51562f2c</span>
+    </p>
+  </header>
+
+  <!-- Countdown Section -->
+  <section class="countdown-section">
+    <h3>Airdrop Closes In</h3>
+    <div id="countdown" class="countdown-box">--d --h --m --s</div>
+  </section>
+
+  <!-- Stats Section -->
+  <section class="stats">
+    <div class="stat-box">
+      <label>Airdrop Pool</label>
+      <h2>500,000,000 $SKYL</h2>
+    </div>
+
+    <div class="stat-box">
+      <label>Participants</label>
+      <h2>First 5,000 Users</h2>
+    </div>
+
+    <div class="stat-box">
+      <label>Distribution</label>
+      <h2>Airdrop #1</h2>
+    </div>
+  </section>
+
+  <p class="ends">Ends: December 31, 2025 @ 23:59 UTC</p>
+
+  <!-- Wallet Buttons -->
+  <section class="wallet-actions">
+    <button class="btn btn-blue" id="connectBtn">Connect Wallet</button>
+    <button class="btn btn-dark" id="disconnectBtn" style="display:none;">Disconnect</button>
+  </section>
+
+  <button class="btn btn-orange big-claim" id="claimTopBtn" disabled>
+    Complete Tasks to Claim
+  </button>
+
+  <p class="network-status">Network: <span id="netStatus">not connected</span></p>
+
+  <!-- Tasks Section -->
+  <section class="tasks">
+    <h3>• Complete These Tasks</h3>
+
+    <div class="task">
+      <img src="img/icon_x.png">
+      <div>
+        <p><b>Follow X & Retweet Post</b><br><span class="points">+50 Points</span></p>
+      </div>
+      <button class="btn btn-purple" id="verify-x">Verify</button>
+    </div>
+
+    <div class="task">
+      <img src="img/icon_telegram.png">
+      <div>
+        <p><b>Join our Telegram channel</b><br><span class="points">+10 Points</span></p>
+      </div>
+      <button class="btn btn-purple" id="verify-telegram">Join</button>
+    </div>
+
+    <div class="task">
+      <img src="img/icon_instagram.png">
+      <div>
+        <p><b>Follow our Instagram</b><br><span class="points">+10 Points</span></p>
+      </div>
+      <button class="btn btn-purple" id="verify-instagram">Follow</button>
+    </div>
+
+    <button class="btn btn-blue full" id="claimNowBtn" disabled>
+      Complete Tasks to Claim
+    </button>
+  </section>
+
+  <!-- Success Popup -->
+  <div id="claimSuccessPopup" class="popup">
+    <div class="popup-box">
+      <h2>✅ Claim Successful!</h2>
+      <p>You have successfully claimed your $SKYL tokens.</p>
+      <button id="closePopup" class="btn btn-blue">OK</button>
+    </div>
+  </div>
+
+  <!-- Top Banner -->
   <div id="topBanner"></div>
 
-  <section id="home" class="section active">
-    <header>
-      <img src="img/logo.png" alt="Skyline Logic Logo" />
-      <h1>Claim Your <span>$SKYL</span></h1>
-      <p class="subtitle">Connect your wallet • Complete tasks • Claim your Skyline Logic airdrop</p>
-      <p class="subtitle" style="margin-top:-8px;color:#7ea1ff;">
-        Token: <code style="color:#cfe1ff;">0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c</code>
-      </p>
-    </header>
-
-    <div class="countdown-container">
-      <div class="countdown-title">Airdrop Closes In</div>
-      <div class="countdown">
-        <span id="countdown">--d --h --m --s</span>
-      </div>
-    </div>
-
-    <div class="airdrop-stats">
-      <div class="stat-item">
-        <span class="stat-title">Airdrop Pool</span>
-        <span class="stat-value">500,000,000 $SKYL</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-title">Participants</span>
-        <span class="stat-value">First 5,000 Users</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-title">Distribution</span>
-        <span class="stat-value">Airdrop #1</span>
-      </div>
-      <p class="ends-line">Ends: December 31, 2025 @ 23:59 UTC</p>
-    </div>
-
-    <div class="cta-row">
-      <div class="wallet-actions">
-        <button class="btn" id="connectWalletBtn">Connect Wallet</button>
-        <button class="btn-outline" id="disconnectWalletBtn">Disconnect</button>
-      </div>
-      <button class="btn-big" id="claimTopBtn" disabled>Complete Tasks to Claim</button>
-    </div>
-
-    <p id="statusMsg" class="network-line">Network: not connected</p>
-
-    <div id="profile-panel" style="display:none;">
-      <p>Wallet: 0x0000...0000</p>
-    </div>
-
-    <div class="tasks-card">
-      <h3>• Complete These Tasks</h3>
-
-      <div class="task">
-        <div class="task-left">
-          <img src="img/icon_x.png" alt="X" />
-          <div>
-            <div class="task-title">Follow X & Retweet Post</div>
-            <div class="task-points">+50 Points</div>
-          </div>
-        </div>
-        <button class="btn" id="verify-x">Verify</button>
-      </div>
-
-      <div class="task">
-        <div class="task-left">
-          <img src="img/icon_telegram.png" alt="Telegram" />
-          <div>
-            <div class="task-title">Join our Telegram channel</div>
-            <div class="task-points">+10 Points</div>
-          </div>
-        </div>
-        <button class="btn" id="verify-telegram">Join</button>
-      </div>
-
-      <div class="task">
-        <div class="task-left">
-          <img src="img/icon_instagram.png" alt="Instagram" />
-          <div>
-            <div class="task-title">Follow our Instagram</div>
-            <div class="task-points">+10 Points</div>
-          </div>
-        </div>
-        <button class="btn" id="verify-instagram">Follow</button>
-      </div>
-
-      <button class="btn-big secondary" id="claimNowBtn" disabled>Complete Tasks to Claim</button>
-    </div>
-  </section>
-
-  <section id="airdrop" class="section">
-    <div class="panel">
-      <h2>Airdrop</h2>
-      <p>Claim details and FAQ will be shown here.</p>
-    </div>
-  </section>
-
-  <section id="leaderboard" class="section">
-    <div class="panel">
-      <h2>Top 10</h2>
-      <div id="leaderboard-body" class="leaderboard"></div>
-    </div>
-  </section>
-
-  <!-- Bottom Nav -->
+  <!-- Bottom Navigation -->
   <nav class="bottom-nav">
-    <div class="nav-item active" data-target="home">
-      <img src="img/icon_home.png" alt="Home"/>
+    <div class="nav-item active">
+      <img src="img/nav_home.png">
       <span>Home</span>
     </div>
-    <div class="nav-item" data-target="airdrop">
-      <img src="img/icon_airdrop.png" alt="Airdrop"/>
+
+    <div class="nav-item">
+      <img src="img/nav_airdrop.png">
       <span>Airdrop</span>
     </div>
-    <div class="nav-item" data-target="leaderboard">
-      <img src="img/icon_trophy.png" alt="Top 10"/>
+
+    <div class="nav-item">
+      <img src="img/nav_top10.png">
       <span>Top 10</span>
     </div>
   </nav>
 
-  <!-- Success Popup -->
-  <div id="claimSuccessPopup" class="modal" style="display:none;">
-    <div class="modal-box">
-      <h3>✅ Claimed</h3>
-      <p>Your $SKYL tokens have been sent.</p>
-      <button class="btn" id="closePopup">OK</button>
-    </div>
-  </div>
-
-  <!-- Generic Modal -->
-  <div id="modalOverlay" class="modal" style="display:none;"></div>
-
-  <!-- Main JS LAST -->
-  <script src="main.js?v=10010"></script>
+  <script src="main.js?v=10012"></script>
 </body>
 </html>
