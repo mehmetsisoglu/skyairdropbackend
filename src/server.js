@@ -1,249 +1,251 @@
-// Skyline Logic Backend - Veritabanı + Telegram Bot Sürümü
 import express from "express";
-import fetch from "node-fetch";
-import dotenv from "dotenv";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
-
-// YENİ: PostgreSQL paketini içe aktar
-import pg from "pg";
-const { Pool } = pg;
-
-// ESKİ KODUNUZDAN: Telegram botu için import
-// Lütfen "bot.js" dosyanızın da bu klasörde olduğundan emin olun!
-import { sendAirdropClaim } from "./bot.js";
-
+import fs from "fs";
+import fetch from "node-fetch";
+import dotenv from "dotenv";
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// YENİ: Veritabanı Bağlantı Havuzu (Connection Pool)
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false 
-  }
-});
-
-// Veritabanı bağlantısını test et
-pool.connect((err, client, release) => {
-  if (err) {
-    return console.error('❌ Veritabanı bağlantı hatası:', err.stack);
-  }
-  console.log('✅ PostgreSQL Veritabanına başarıyla bağlandı!');
-  client.release();
-});
-
-
-// Dinamik Puanlama (Aynı kaldı)
-const TASK_POINTS = {
-    'x': 50,
-    'telegram': 10,
-    'instagram': 10
-};
-
 const app = express();
-const DEFAULT_PORT = 3000;
-let port = Number(process.env.PORT) || DEFAULT_PORT;
 
-app.use(express.static(path.join(__dirname, '/'))); 
-app.use(cors({ origin: "*", methods: ["GET", "POST"] }));
-app.use(express.json());
+/* ---------- Security & CORS ---------- */
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+}));
 
-// GÜNCELLENDİ: tasks.json okumak yerine veritabanından okur
-async function readTasksDB() {
-  const client = await pool.connect();
+const ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || ORIGINS.length === 0) return cb(null, true);
+    return ORIGINS.includes(origin) ? cb(null, true) : cb(new Error("CORS blocked"), false);
+  },
+  methods: ["GET","POST"],
+  allowedHeaders: ["Content-Type"]
+}));
+
+app.use(express.json({ limit: "500kb" }));
+
+/* ---------- Static ---------- */
+app.use(express.static(__dirname));
+
+/* ---------- Simple JSON “DB” (ephemeral) ---------- */
+const tasksFile = path.join(__dirname, "tasks.json");
+const leaderboardFile = path.join(__dirname, "leaders.json");
+const metaFile = path.join(__dirname, "meta.json"); // IP/FP izleme
+
+function loadJSON(file, fallback) {
   try {
-    const res = await client.query('SELECT wallet, tasks, last_completed FROM users');
-    const dbObject = {};
-    for (const row of res.rows) {
-      dbObject[row.wallet] = {
-        tasks: row.tasks || [],
-        lastCompleted: row.last_completed ? parseInt(row.last_completed, 10) : null 
-      };
-    }
-    return dbObject;
-  } catch (error) {
-    console.error("❌ DB Okuma Hatası (readTasksDB):", error);
-    return {}; 
-  } finally {
-    client.release(); 
+    if (!fs.existsSync(file)) return fallback;
+    return JSON.parse(fs.readFileSync(file));
+  } catch {
+    return fallback;
   }
 }
+function saveJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
 
-// GÜNCELLENDİ: Görevleri Yükle Endpoint
-app.get("/get-tasks", async (req, res) => {
-  const wallet = req.query.wallet ? req.query.wallet.toLowerCase() : null;
-  if (!wallet) {
-    return res.status(400).json({ success: false, message: "Wallet address required" });
+/* ---------- Helpers ---------- */
+const getIp = (req) =>
+  (req.headers["x-forwarded-for"]?.split(",")[0] ||
+   req.headers["x-real-ip"] ||
+   req.socket.remoteAddress ||
+   "").toString();
+
+const now = () => Date.now();
+
+function within(ms, since) { return (now() - since) <= ms; }
+
+/* ---------- In-memory windows for speed ---------- */
+let meta = loadJSON(metaFile, { ip: {}, fp: {}, walletsByIp: {}, walletsByFp: {} });
+
+function rememberActivity({ ip, fp, wallet }) {
+  const ts = now();
+
+  // IP bucket
+  meta.ip[ip] ||= [];
+  meta.ip[ip].push(ts);
+  meta.ip[ip] = meta.ip[ip].filter(t => within(24*3600*1000, t));
+
+  // FP bucket
+  if (fp) {
+    meta.fp[fp] ||= [];
+    meta.fp[fp].push(ts);
+    meta.fp[fp] = meta.fp[fp].filter(t => within(24*3600*1000, t));
   }
 
-  const client = await pool.connect();
+  // Uniqueness per 24h
+  meta.walletsByIp[ip] ||= new Set();
+  meta.walletsByIp[ip].add(wallet);
+
+  if (fp) {
+    meta.walletsByFp[fp] ||= new Set();
+    meta.walletsByFp[fp].add(wallet);
+  }
+
+  // Persist to disk (best-effort)
+  saveJSON(metaFile, {
+    ip: meta.ip,
+    fp: meta.fp,
+    walletsByIp: Object.fromEntries(Object.entries(meta.walletsByIp).map(([k,v]) => [k, [...v]])),
+    walletsByFp: Object.fromEntries(Object.entries(meta.walletsByFp).map(([k,v]) => [k, [...v]])),
+  });
+
+  // Restore Sets after save
+  meta.walletsByIp = Object.fromEntries(Object.entries(meta.walletsByIp).map(([k,v]) => [k, new Set([...v])]));
+  meta.walletsByFp = Object.fromEntries(Object.entries(meta.walletsByFp).map(([k,v]) => [k, new Set([...v])]));
+}
+
+/* ---------- Rate limits ---------- */
+const baseLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60, // dakika başı 60 istek
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(baseLimiter);
+
+const sensitiveLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15, // verify/save gibi uçlar için daha sıkı
+});
+
+/* ---------- Risk Scoring ---------- */
+const MIN_FOLLOWERS = parseInt(process.env.MIN_FOLLOWERS || "5", 10);
+const MIN_ACCOUNT_AGE_DAYS = parseInt(process.env.MIN_ACCOUNT_AGE_DAYS || "7", 10);
+const REQUIRE_PROFILE_IMAGE = (process.env.REQUIRE_PROFILE_IMAGE || "true") === "true";
+const MAX_WALLETS_PER_IP_24H = parseInt(process.env.MAX_WALLETS_PER_IP_24H || "5", 10);
+const MAX_WALLETS_PER_FP_24H = parseInt(process.env.MAX_WALLETS_PER_FP_24H || "3", 10);
+
+function scoreTwitterUser(u) {
+  let score = 0;
+  const created = new Date(u.created_at).getTime();
+  const ageDays = (now() - created) / (24*3600*1000);
+
+  if ((u.public_metrics?.followers_count || 0) < MIN_FOLLOWERS) score += 40;
+  if (ageDays < MIN_ACCOUNT_AGE_DAYS) score += 40;
+  if (REQUIRE_PROFILE_IMAGE && (u.profile_image_url?.includes("default_profile_images") || !u.profile_image_url)) score += 20;
+
+  return score; // 0 iyi, 100 riskli
+}
+
+function scoreContext({ ip, fp }) {
+  let s = 0;
+  const ipWallets = meta.walletsByIp[ip] ? meta.walletsByIp[ip].size : 0;
+  if (ipWallets > MAX_WALLETS_PER_IP_24H) s += 40;
+
+  if (fp) {
+    const fpWallets = meta.walletsByFp[fp] ? meta.walletsByFp[fp].size : 0;
+    if (fpWallets > MAX_WALLETS_PER_FP_24H) s += 40;
+  }
+  return s;
+}
+
+/* ---------- Leaderboard & Tasks ---------- */
+app.get("/get-leaderboard", (req, res) => {
+  const leaders = loadJSON(leaderboardFile, []);
+  res.json(leaders);
+});
+
+app.get("/get-tasks", (req, res) => {
+  const wallet = (req.query.wallet || "").toLowerCase();
+  if (!wallet) return res.json({ tasks: [] });
+
+  const db = loadJSON(tasksFile, {});
+  res.json({ tasks: db[wallet] || [] });
+});
+
+app.post("/save-tasks", sensitiveLimiter, (req, res) => {
+  const { wallet, tasks, fp, ua } = req.body || {};
+  if (!wallet || !Array.isArray(tasks)) {
+    return res.status(400).json({ success: false, message: "Invalid payload" });
+  }
+
+  const ip = getIp(req);
+  rememberActivity({ ip, fp, wallet: wallet.toLowerCase() });
+
+  const db = loadJSON(tasksFile, {});
+  db[wallet.toLowerCase()] = tasks;
+  saveJSON(tasksFile, db);
+
+  // Basit puan (mevcut akışı bozmaz)
+  const points = (tasks.includes("x")?50:0) + (tasks.includes("telegram")?10:0) + (tasks.includes("instagram")?10:0);
+  let leaders = loadJSON(leaderboardFile, []);
+  const idx = leaders.findIndex(l => l.wallet.toLowerCase() === wallet.toLowerCase());
+  if (idx >= 0) leaders[idx].points = points; else leaders.push({ wallet, points });
+  leaders.sort((a,b) => (b.points||0)-(a.points||0));
+  saveJSON(leaderboardFile, leaders);
+
+  return res.json({ success: true });
+});
+
+/* ---------- X Verify (username + retweet) ---------- */
+app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   try {
-    const result = await client.query('SELECT tasks FROM users WHERE wallet = $1', [wallet]);
-    if (result.rows.length === 0) {
-      return res.json({ wallet: wallet, tasks: [] });
-    }
-    res.json({ wallet: wallet, tasks: result.rows[0].tasks || [] });
-  } catch (error) {
-    console.error("❌ DB Hatası (/get-tasks):", error);
-    res.status(500).json({ success: false, message: "Failed to get tasks" });
-  } finally {
-    client.release();
-  }
-});
+    const { username, wallet, fp } = req.body || {};
+    if (!username) return res.status(400).json({ message: "Username required" });
 
-// GÜNCELLENDİ: Görevleri Kaydet Endpoint
-app.post("/save-tasks", async (req, res) => {
-  const { wallet, tasks } = req.body;
-  if (!wallet || !tasks || !Array.isArray(tasks)) {
-    return res.status(400).json({ success: false, message: "Invalid input" });
-  }
-  
-  const lowerWallet = wallet.toLowerCase();
-  const newTimestamp = Date.now(); 
-  const client = await pool.connect();
+    const ip = getIp(req);
+    rememberActivity({ ip, fp, wallet: (wallet||"").toLowerCase() });
 
-  try {
-    const query = `
-      INSERT INTO users (wallet, tasks, last_completed)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (wallet) DO UPDATE
-      SET tasks = $2, last_completed = $3;
-    `;
-    await client.query(query, [lowerWallet, tasks, newTimestamp]);
-    res.json({ success: true, message: "Tasks saved", wallet: lowerWallet, tasks: tasks });
-  } catch (error) {
-    console.error("❌ DB Hatası (/save-tasks):", error);
-    res.status(500).json({ success: false, message: "Failed to save tasks" });
-  } finally {
-    client.release();
-  }
-});
+    const bearer = process.env.TWITTER_BEARER_TOKEN;
+    const tweetId = process.env.AIRDROP_TWEET_ID;
+    if (!bearer || !tweetId) return res.status(500).json({ message: "X API not configured" });
 
-// GÜNCELLENDİ: Leaderboard Endpoint
-app.get("/get-leaderboard", async (req, res) => {
-    const db = await readTasksDB(); 
-    let leaderboard = [];
-
-    for (const wallet in db) {
-        let points = 0;
-        if (db[wallet].tasks && Array.isArray(db[wallet].tasks)) {
-            db[wallet].tasks.forEach(task => {
-                points += (TASK_POINTS[task] || 0);
-            });
-        }
-        if (points > 0) {
-            leaderboard.push({ 
-                wallet: wallet, 
-                points: points,
-                time: db[wallet].lastCompleted || Date.now() 
-            });
-        }
-    }
-
-    leaderboard.sort((a, b) => {
-        if (a.points !== b.points) {
-            return b.points - a.points; 
-        }
-        return a.time - b.time; 
+    // 1) Kullanıcı bilgisi
+    const userRes = await fetch(`https://api.twitter.com/2/users/by/username/${encodeURIComponent(username)}?user.fields=created_at,public_metrics,profile_image_url`, {
+      headers: { Authorization: `Bearer ${bearer}` }
     });
+    const userData = await userRes.json();
+    const user = userData?.data;
+    if (!user) return res.status(400).json({ message: "User not found" });
 
-    const top10 = leaderboard.slice(0, 10);
-    res.json(top10);
-});
-
-
-// GÜNCELLENDİ: X (Twitter) Doğrulama Endpoint
-app.post("/verify-x", async (req, res) => {
-  const { username } = req.body;
-  const BEARER_TOKEN = process.env.X_BEARER_TOKEN;
-  const AIRDROP_TWEET_ID = process.env.AIRDROP_TWEET_ID; 
-
-  if (!username) {
-    return res.status(400).json({ message: "❌ Username is required." });
-  }
-  if (!AIRDROP_TWEET_ID || !BEARER_TOKEN) {
-    console.error("❌ SUNUCU AYAR HATASI: X_BEARER_TOKEN veya AIRDROP_TWEET_ID .env dosyasında eksik.");
-    return res.status(500).json({ message: "⚠️ Server configuration error." });
-  }
-
-  try {
-    // === AŞAMA 1 ===
-    const userLookupResponse = await fetch(`https://api.x.com/2/users/by/username/${username}`, {
-      headers: { Authorization: `Bearer ${BEARER_TOKEN}` },
+    // 2) Retweet kontrolü
+    // /retweeted_by endpointi sayfalıdır; burada 100 kişilik sayfada arıyoruz (çoğu kampanyada yeterli).
+    // Gerekirse pagination eklenebilir.
+    const rtRes = await fetch(`https://api.twitter.com/2/tweets/${tweetId}/retweeted_by?max_results=100`, {
+      headers: { Authorization: `Bearer ${bearer}` }
     });
-    const userData = await userLookupResponse.json();
-    if (!userLookupResponse.ok || !userData?.data?.id) {
-      console.error(`❌ X API HATASI (Aşama 1): Kullanıcı '${username}' bulunamadı.`);
-      return res.status(404).json({ message: `⚠️ User '${username}' not found.` });
-    }
-    const userId = userData.data.id;
-    console.log(`✅ AŞAMA 1 BAŞARILI: '${username}' bulundu. ID: ${userId}`);
+    const rtData = await rtRes.json();
+    const didRT = !!rtData?.data?.some(u => u.id === user.id);
 
-    // === AŞAMA 2 ===
-    const tweetLookupUrl = `https://api.x.com/2/users/${userId}/tweets?tweet.fields=referenced_tweets&max_results=100`;
-    const tweetLookupResponse = await fetch(tweetLookupUrl, {
-      headers: { Authorization: `Bearer ${BEARER_TOKEN}` },
-    });
-    const tweetData = await tweetLookupResponse.json();
-    if (!tweetLookupResponse.ok) {
-       console.error(`❌ X API HATASI (Aşama 2): Kullanıcının tweetleri çekilemedi. ID: ${userId}`);
-       return res.status(500).json({ message: "⚠️ Could not check user's tweets." });
-    }
+    if (!didRT) return res.status(400).json({ message: "Retweet not found" });
 
-    // === AŞAMA 3 ===
-    let retweetFound = false;
-    if (tweetData.data && Array.isArray(tweetData.data)) {
-        for (const tweet of tweetData.data) {
-            if (tweet.referenced_tweets && Array.isArray(tweet.referenced_tweets)) {
-                for (const refTweet of tweet.referenced_tweets) {
-                    if ((refTweet.type === 'retweeted' || refTweet.type === 'quoted') && refTweet.id === AIRDROP_TWEET_ID) {
-                        retweetFound = true;
-                        break; 
-                    }
-                }
-            }
-            if (retweetFound) break; 
-        }
-    }
-    if (retweetFound) {
-        console.log(`✅ AŞAMA 3 BAŞARILI: '${username}' tweet'i (${AIRDROP_TWEET_ID}) retweetlemiş (veya alıntılamış).`);
-        return res.json({ message: "✅ Verified! Retweet found." });
-    } else {
-        console.warn(`❌ AŞAMA 3 BAŞARISIZ: '${username}' tweet'i (${AIRDROP_TWEET_ID}) retweetlememiş (veya son 100 tweet'i arasında değil).`);
-        return res.status(400).json({ message: "⚠️ Verification failed. Airdrop post retweet not found in your recent tweets." });
-    }
+    // 3) Risk skoru
+    const twitterScore = scoreTwitterUser(user);
+    const ctxScore = scoreContext({ ip, fp });
+    const risk = twitterScore + ctxScore; // 0-100+
 
-  } catch (error) {
-    console.error("❌ SUNUCU HATASI (Catch):", error);
-    res.status(500).json({ message: "⚠️ Internal server error." });
+    // 4) Yüksek riskli ise yine de 200 döneriz ama "flag" ile bildiririz (frontend akışı bozulmasın)
+    return res.json({ success: true, risk, user: { id: user.id, username: user.username } });
+  } catch (err) {
+    console.error("verify-x error:", err);
+    return res.status(500).json({ message: "Twitter API error" });
   }
 });
 
-// ESKİ KODUNUZDAN: TELEGRAM'A AIRDROP CLAIM BİLDİRİMİ
-app.post("/notify-claim", async (req, res) => {
-  try {
-    const { wallet, amount } = req.body;
-
-    if (!wallet || !amount) {
-      return res.status(400).json({ error: "missing wallet or amount" });
-    }
-
-    await sendAirdropClaim({ wallet, amount });
-
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error("claim notify error:", e);
-    res.status(500).json({ error: true });
-  }
+/* ---------- (Opsiyonel) Pre-claim risk kontrol ---------- */
+app.post("/pre-claim", sensitiveLimiter, (req, res) => {
+  const { wallet, fp } = req.body || {};
+  const ip = getIp(req);
+  const risk = scoreContext({ ip, fp });
+  const hardBlock = risk >= 80; // eşik, istersen env'e taşı
+  return res.json({ ok: !hardBlock, risk });
 });
 
+/* ---------- Health ---------- */
+app.get("/health", (req, res) => res.send("OK"));
 
-// Sunucu Başlatma
-app.listen(port, () => {
-    console.log(`✅ Sunucu ${port} portunda çalışıyor.`);
-    console.log(`Lokal adres: http://localhost:${port}`);
-});
+/* ---------- Start ---------- */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("✅ SKYL backend running on", PORT));
