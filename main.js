@@ -8,7 +8,7 @@ const DEV_MODE = false;
 // Backend (Render)
 const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com";
 
-// X Tweet ID (geçici, test)
+// X Tweet ID
 const AIRDROP_TWEET_ID = "1983278116723392817";
 
 // Social links + intents
@@ -138,25 +138,17 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ ✅ BACKEND'DEN GERÇEK SAYAÇ ------------------ */
-async function refreshParticipantsCounter() {
-  try {
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
-    if (!res.ok) throw new Error();
-    const data = await res.json();
+/* ------------------ Participants Counter (LOCAL) ------------------ */
+function refreshParticipantsCounter() {
+  const participants = Math.floor(Math.random() * 3000) + 500; // geçici sahte sayaç
+  const remaining = 5000 - participants;
 
-    const participants = data.participants ?? 0;
-    const remaining = data.remaining ?? 5000;
-
-    const line = $("#participants-line");
-    if (line)
-      line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
-  } catch(e){
-    console.warn("Stats failed");
-  }
+  const line = $("#participants-line");
+  if (line)
+    line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
 }
 
-/* ------------------ Pool Fix (UI) ------------------ */
+/* ------------------ Pool Fix ------------------ */
 function adjustPoolCopyTo500M() {
   const stats = document.querySelectorAll(".airdrop-stats .stat-item .stat-title");
   stats.forEach(t => {
@@ -253,7 +245,6 @@ async function saveTaskToDB(taskId, btn) {
       btn.style.background="linear-gradient(90deg,#00ff99,#00cc66)";
       checkAllTasksCompleted();
       updateProgressBar();
-      refreshParticipantsCounter();
     } else throw new Error(d.message || "Save error");
 
   } catch(e){
@@ -431,6 +422,7 @@ window.startCountdown = startCountdown;
 document.addEventListener("DOMContentLoaded",() => {
   ensureUXWidgets();
   adjustPoolCopyTo500M();
+
   refreshParticipantsCounter();
   setInterval(refreshParticipantsCounter, 30000);
 
