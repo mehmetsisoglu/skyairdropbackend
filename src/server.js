@@ -38,10 +38,10 @@ app.use(express.json({ limit: "500kb" }));
 /* ---------- Static ---------- */
 app.use(express.static(__dirname));
 
-/* ---------- Simple JSON “DB” (ephemeral) ---------- */
+/* ---------- JSON DB ---------- */
 const tasksFile = path.join(__dirname, "tasks.json");
 const leaderboardFile = path.join(__dirname, "leaders.json");
-const metaFile = path.join(__dirname, "meta.json"); // IP/FP izleme
+const metaFile = path.join(__dirname, "meta.json");
 
 function loadJSON(file, fallback) {
   try {
@@ -63,28 +63,24 @@ const getIp = (req) =>
    "").toString();
 
 const now = () => Date.now();
-
 function within(ms, since) { return (now() - since) <= ms; }
 
-/* ---------- In-memory windows for speed ---------- */
+/* ---------- In-Memory Meta Tracking ---------- */
 let meta = loadJSON(metaFile, { ip: {}, fp: {}, walletsByIp: {}, walletsByFp: {} });
 
 function rememberActivity({ ip, fp, wallet }) {
   const ts = now();
 
-  // IP bucket
   meta.ip[ip] ||= [];
   meta.ip[ip].push(ts);
   meta.ip[ip] = meta.ip[ip].filter(t => within(24*3600*1000, t));
 
-  // FP bucket
   if (fp) {
     meta.fp[fp] ||= [];
     meta.fp[fp].push(ts);
     meta.fp[fp] = meta.fp[fp].filter(t => within(24*3600*1000, t));
   }
 
-  // Uniqueness per 24h
   meta.walletsByIp[ip] ||= new Set();
   meta.walletsByIp[ip].add(wallet);
 
@@ -93,7 +89,6 @@ function rememberActivity({ ip, fp, wallet }) {
     meta.walletsByFp[fp].add(wallet);
   }
 
-  // Persist to disk (best-effort)
   saveJSON(metaFile, {
     ip: meta.ip,
     fp: meta.fp,
@@ -101,15 +96,14 @@ function rememberActivity({ ip, fp, wallet }) {
     walletsByFp: Object.fromEntries(Object.entries(meta.walletsByFp).map(([k,v]) => [k, [...v]])),
   });
 
-  // Restore Sets after save
   meta.walletsByIp = Object.fromEntries(Object.entries(meta.walletsByIp).map(([k,v]) => [k, new Set([...v])]));
   meta.walletsByFp = Object.fromEntries(Object.entries(meta.walletsByFp).map(([k,v]) => [k, new Set([...v])]));
 }
 
-/* ---------- Rate limits ---------- */
+/* ---------- Rate Limits ---------- */
 const baseLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60, // dakika başı 60 istek
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -117,10 +111,10 @@ app.use(baseLimiter);
 
 const sensitiveLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 15, // verify/save gibi uçlar için daha sıkı
+  max: 15,
 });
 
-/* ---------- Risk Scoring ---------- */
+/* ---------- Fraud Settings ---------- */
 const MIN_FOLLOWERS = parseInt(process.env.MIN_FOLLOWERS || "5", 10);
 const MIN_ACCOUNT_AGE_DAYS = parseInt(process.env.MIN_ACCOUNT_AGE_DAYS || "7", 10);
 const REQUIRE_PROFILE_IMAGE = (process.env.REQUIRE_PROFILE_IMAGE || "true") === "true";
@@ -136,11 +130,12 @@ function scoreTwitterUser(u) {
   if (ageDays < MIN_ACCOUNT_AGE_DAYS) score += 40;
   if (REQUIRE_PROFILE_IMAGE && (u.profile_image_url?.includes("default_profile_images") || !u.profile_image_url)) score += 20;
 
-  return score; // 0 iyi, 100 riskli
+  return score;
 }
 
 function scoreContext({ ip, fp }) {
   let s = 0;
+
   const ipWallets = meta.walletsByIp[ip] ? meta.walletsByIp[ip].size : 0;
   if (ipWallets > MAX_WALLETS_PER_IP_24H) s += 40;
 
@@ -151,12 +146,13 @@ function scoreContext({ ip, fp }) {
   return s;
 }
 
-/* ---------- Leaderboard & Tasks ---------- */
+/* ---------- Leaderboard ---------- */
 app.get("/get-leaderboard", (req, res) => {
   const leaders = loadJSON(leaderboardFile, []);
   res.json(leaders);
 });
 
+/* ---------- Tasks ---------- */
 app.get("/get-tasks", (req, res) => {
   const wallet = (req.query.wallet || "").toLowerCase();
   if (!wallet) return res.json({ tasks: [] });
@@ -166,7 +162,7 @@ app.get("/get-tasks", (req, res) => {
 });
 
 app.post("/save-tasks", sensitiveLimiter, (req, res) => {
-  const { wallet, tasks, fp, ua } = req.body || {};
+  const { wallet, tasks, fp } = req.body || {};
   if (!wallet || !Array.isArray(tasks)) {
     return res.status(400).json({ success: false, message: "Invalid payload" });
   }
@@ -178,31 +174,32 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   db[wallet.toLowerCase()] = tasks;
   saveJSON(tasksFile, db);
 
-  // Basit puan (mevcut akışı bozmaz)
   const points = (tasks.includes("x")?50:0) + (tasks.includes("telegram")?10:0) + (tasks.includes("instagram")?10:0);
+
   let leaders = loadJSON(leaderboardFile, []);
   const idx = leaders.findIndex(l => l.wallet.toLowerCase() === wallet.toLowerCase());
-  if (idx >= 0) leaders[idx].points = points; else leaders.push({ wallet, points });
+  if (idx >= 0) leaders[idx].points = points;
+  else leaders.push({ wallet, points });
+
   leaders.sort((a,b) => (b.points||0)-(a.points||0));
   saveJSON(leaderboardFile, leaders);
 
-  return res.json({ success: true });
+  res.json({ success: true });
 });
 
-/* ---------- X Verify (username + retweet) ---------- */
+/* ---------- X Verify ---------- */
 app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   try {
     const { username, wallet, fp } = req.body || {};
     if (!username) return res.status(400).json({ message: "Username required" });
 
     const ip = getIp(req);
-    rememberActivity({ ip, fp, wallet: (wallet||"").toLowerCase() });
+    rememberActivity({ ip, fp, wallet });
 
     const bearer = process.env.TWITTER_BEARER_TOKEN;
     const tweetId = process.env.AIRDROP_TWEET_ID;
     if (!bearer || !tweetId) return res.status(500).json({ message: "X API not configured" });
 
-    // 1) Kullanıcı bilgisi
     const userRes = await fetch(`https://api.twitter.com/2/users/by/username/${encodeURIComponent(username)}?user.fields=created_at,public_metrics,profile_image_url`, {
       headers: { Authorization: `Bearer ${bearer}` }
     });
@@ -210,9 +207,6 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
     const user = userData?.data;
     if (!user) return res.status(400).json({ message: "User not found" });
 
-    // 2) Retweet kontrolü
-    // /retweeted_by endpointi sayfalıdır; burada 100 kişilik sayfada arıyoruz (çoğu kampanyada yeterli).
-    // Gerekirse pagination eklenebilir.
     const rtRes = await fetch(`https://api.twitter.com/2/tweets/${tweetId}/retweeted_by?max_results=100`, {
       headers: { Authorization: `Bearer ${bearer}` }
     });
@@ -221,12 +215,10 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
 
     if (!didRT) return res.status(400).json({ message: "Retweet not found" });
 
-    // 3) Risk skoru
     const twitterScore = scoreTwitterUser(user);
     const ctxScore = scoreContext({ ip, fp });
-    const risk = twitterScore + ctxScore; // 0-100+
+    const risk = twitterScore + ctxScore;
 
-    // 4) Yüksek riskli ise yine de 200 döneriz ama "flag" ile bildiririz (frontend akışı bozulmasın)
     return res.json({ success: true, risk, user: { id: user.id, username: user.username } });
   } catch (err) {
     console.error("verify-x error:", err);
@@ -234,13 +226,24 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   }
 });
 
-/* ---------- (Opsiyonel) Pre-claim risk kontrol ---------- */
+/* ---------- Pre-Claim Risk ---------- */
 app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   const { wallet, fp } = req.body || {};
   const ip = getIp(req);
   const risk = scoreContext({ ip, fp });
-  const hardBlock = risk >= 80; // eşik, istersen env'e taşı
+  const hardBlock = risk >= 80;
   return res.json({ ok: !hardBlock, risk });
+});
+
+/* ---------- Airdrop Info (NEW) ---------- */
+app.get("/airdrop-info", (req, res) => {
+  res.json({
+    pool: 500000000,
+    participantsLimit: 5000,
+    endDate: "2025-12-31T23:59:59Z",
+    network: "BSC",
+    version: "1.3"
+  });
 });
 
 /* ---------- Health ---------- */
