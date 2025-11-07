@@ -138,14 +138,22 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ Participants Counter (LOCAL) ------------------ */
-function refreshParticipantsCounter() {
-  const participants = Math.floor(Math.random() * 3000) + 500; // geçici sahte sayaç
-  const remaining = 5000 - participants;
+/* ------------------ Participants Counter (NOW REAL API) ------------------ */
+async function refreshParticipantsCounter() {
+  try {
+    const r = await fetch(`${NODE_SERVER_URL}/airdrop-stats`);
+    const d = await r.json();
 
-  const line = $("#participants-line");
-  if (line)
-    line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
+    const participants = d.participants ?? 0;
+    const remaining = d.remaining ?? (5000 - participants);
+
+    const line = $("#participants-line");
+    if (line)
+      line.textContent =
+        `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
+  } catch (e) {
+    // Sessiz fail — arayüz bozulmasın
+  }
 }
 
 /* ------------------ Pool Fix ------------------ */
@@ -358,7 +366,7 @@ async function claimTokens() {
   const b2 = $("#claimNowBtn");
 
   try {
-const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI_DATA, signer);
+    const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI_DATA, signer);
 
     if (b1) b1.textContent="Waiting for signature...";
     if (b2) b2.textContent="Waiting for signature...";
