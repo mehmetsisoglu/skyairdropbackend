@@ -97,7 +97,6 @@ const TASKS = [
 
 /* ------------------ UX Widgets ------------------ */
 function ensureUXWidgets() {
-  // Progress bar
   if (!$("#task-progress")) {
     const req = document.querySelector(".requirements");
     if (req) {
@@ -117,7 +116,6 @@ function ensureUXWidgets() {
     }
   }
 
-  // Participants/Remaining sayaç kutusu
   if (!$("#participants-box")) {
     const cc = document.querySelector(".countdown-container");
     if (cc) {
@@ -140,17 +138,22 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
+/* ------------------ ✅ BACKEND'DEN GERÇEK SAYAÇ ------------------ */
 async function refreshParticipantsCounter() {
   try {
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/get-leaderboard`);
+    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
     if (!res.ok) throw new Error();
-    const leaders = await res.json();
-    const count = Array.isArray(leaders) ? leaders.length : 0;
-    const max = 5000;
-    const remaining = Math.max(0, max - count);
+    const data = await res.json();
+
+    const participants = data.participants ?? 0;
+    const remaining = data.remaining ?? 5000;
+
     const line = $("#participants-line");
-    if (line) line.textContent = `Participants: ${count.toLocaleString()} / ${max.toLocaleString()} • Remaining: ${remaining.toLocaleString()}`;
-  } catch(e){}
+    if (line)
+      line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
+  } catch(e){
+    console.warn("Stats failed");
+  }
 }
 
 /* ------------------ Pool Fix (UI) ------------------ */
@@ -268,7 +271,6 @@ async function verifyTask(taskId) {
   if (!btn) return;
   if (completedTasks.includes(taskId)) return showModal("This task is already completed ✅");
 
-  // open social URLs / intents
   if (taskId === 'x') {
     window.open(SOCIAL_URLS.xFollowIntent,'_blank');
     window.open(SOCIAL_URLS.xRetweetIntent,'_blank');
@@ -427,13 +429,11 @@ window.startCountdown = startCountdown;
 
 /* ------------------ Init ------------------ */
 document.addEventListener("DOMContentLoaded",() => {
-  // UX
   ensureUXWidgets();
   adjustPoolCopyTo500M();
   refreshParticipantsCounter();
-  setInterval(refreshParticipantsCounter, 30000); // 30sn
+  setInterval(refreshParticipantsCounter, 30000);
 
-  // Events
   const connectBtn = document.querySelector(".wallet-actions .btn");
   if (connectBtn) connectBtn.addEventListener("click", connectWallet);
 
@@ -446,6 +446,5 @@ document.addEventListener("DOMContentLoaded",() => {
   $("#verify-telegram")?.addEventListener("click",()=>verifyTask("telegram"));
   $("#verify-instagram")?.addEventListener("click",()=>verifyTask("instagram"));
 
-  // Countdown
   window.startCountdown();
 });
