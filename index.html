@@ -4,12 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Skyline Logic Airdrop</title>
-  <link rel="stylesheet" href="style.css?v=1.7">
-
-  <!-- Ethers -->
+  <link rel="stylesheet" href="style.css?v=1.5">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
-
 </head>
+
 <body>
 
   <header class="header">
@@ -21,13 +19,11 @@
     </p>
   </header>
 
-  <!-- Countdown Section -->
   <section class="countdown-section">
     <h3>Airdrop Closes In</h3>
     <div id="countdown" class="countdown-box">--d --h --m --s</div>
   </section>
 
-  <!-- Stats Section -->
   <section class="stats">
     <div class="stat-box">
       <label>Airdrop Pool</label>
@@ -47,7 +43,6 @@
 
   <p class="ends">Ends: December 31, 2025 @ 23:59 UTC</p>
 
-  <!-- Wallet Buttons -->
   <section class="wallet-actions">
     <button class="btn btn-blue" id="connectBtn">Connect Wallet</button>
     <button class="btn btn-dark" id="disconnectBtn" style="display:none;">Disconnect</button>
@@ -59,12 +54,12 @@
 
   <p class="network-status">Network: <span id="netStatus">not connected</span></p>
 
-  <!-- Tasks Section -->
+  <!-- Tasks -->
   <section class="tasks">
     <h3>• Complete These Tasks</h3>
 
     <div class="task">
-      <img src="img/icon_x.png">
+      <img src="img/x_3d.png">
       <div>
         <p><b>Follow X & Retweet Post</b><br><span class="points">+50 Points</span></p>
       </div>
@@ -72,7 +67,7 @@
     </div>
 
     <div class="task">
-      <img src="img/icon_telegram.png">
+      <img src="img/telegram_3d.png">
       <div>
         <p><b>Join our Telegram channel</b><br><span class="points">+10 Points</span></p>
       </div>
@@ -80,7 +75,7 @@
     </div>
 
     <div class="task">
-      <img src="img/icon_instagram.png">
+      <img src="img/instagram_3d.png">
       <div>
         <p><b>Follow our Instagram</b><br><span class="points">+10 Points</span></p>
       </div>
@@ -92,7 +87,6 @@
     </button>
   </section>
 
-  <!-- Success Popup -->
   <div id="claimSuccessPopup" class="popup">
     <div class="popup-box">
       <h2>✅ Claim Successful!</h2>
@@ -101,27 +95,26 @@
     </div>
   </div>
 
-  <!-- Top Banner -->
   <div id="topBanner"></div>
 
   <!-- Bottom Navigation -->
   <nav class="bottom-nav">
     <div class="nav-item active">
-      <img src="img/nav_home.png">
+      <img src="img/icon_home.png">
       <span>Home</span>
     </div>
 
     <div class="nav-item">
-      <img src="img/nav_airdrop.png">
+      <img src="img/icon_airdrop.png">
       <span>Airdrop</span>
     </div>
 
     <div class="nav-item">
-      <img src="img/nav_top10.png">
+      <img src="img/icon_leaderboard.png">
       <span>Top 10</span>
     </div>
   </nav>
 
-  <script src="main.js?v=10013"></script>
+  <script src="main.js?v=10015"></script>
 </body>
 </html>
