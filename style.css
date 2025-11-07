@@ -1,240 +1,574 @@
-/* ===============================
-   GLOBAL
-=============================== */
+/* ==========================
+   Skyline Logic - AYDINLIK TEMA v2.2
+   (Ana Sayfa skyl.online ile tutarlı)
+   ========================== */
+
+/* === Renk Paleti (Ana Sayfadan alındı) === */
+:root {
+  /* Tailwind Renkleri */
+  --c-bg: #F8FAFC; /* slate-50 */
+  --c-container-bg: #FFFFFF; /* white */
+  --c-container-border: #e2e8f0; /* slate-200 */
+  --c-task-bg: #f1f5f9; /* slate-100 */
+  
+  --c-text-header: #0284c7; /* sky-600 */
+  --c-text-body: #334155; /* slate-700 */
+  --c-text-subtle: #64748b; /* slate-600 */
+
+  --c-brand-sky: #0ea5e9; /* sky-500 */
+  --c-brand-sky-hover: #0284c7; /* sky-600 */
+  
+  --c-brand-orange: #f97316; /* orange-500 */
+  --c-brand-orange-hover: #ea580c; /* orange-600 */
+  
+  --c-brand-green: #22c55e; /* green-500 */
+  
+  --f-body: 'Poppins', sans-serif;
+  --f-header: 'Orbitron', sans-serif;
+}
+
+/* === Body Stilleri === */
 body {
-    margin: 0;
-    padding: 0;
-    background: #f5f7fa;
-    font-family: 'Inter', sans-serif;
-    color: #111;
+  margin: 0;
+  font-family: var(--f-body);
+  color: var(--c-text-body);
+  background-color: var(--c-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  overflow-x: hidden;
+  padding-bottom: 90px;
 }
 
-h1, h2, h3, h4, h5 {
-    margin: 0;
+/* === Başlık Stilleri === */
+header {
+  text-align: center;
+  margin-top: 50px;
 }
 
-.container {
-    width: 92%;
-    max-width: 1150px;
-    margin: 0 auto;
-    padding-top: 30px;
+header img {
+  width: 130px;
+  margin-bottom: 20px;
 }
 
-/* ===============================
-   HEADER
-=============================== */
-
-.header {
-    text-align: center;
-    padding-bottom: 20px;
+h1 {
+  font-family: var(--f-header);
+  font-size: 2.8rem;
+  color: var(--c-text-header);
+  text-shadow: none;
+  position: relative;
 }
 
-.logo {
-    width: 130px;
-    margin-bottom: 10px;
+h1 span {
+  color: var(--c-brand-orange);
+  text-shadow: none;
 }
 
-/* ===============================
-   AIRDROP STATS PANEL
-=============================== */
-.airdrop-container {
-    background: #ffffff;
-    padding: 20px;
-    border-radius: 16px;
-    margin-top: 20px;
-    box-shadow: rgba(0, 0, 0, 0.08) 0px 2px 8px;
+p.subtitle {
+  color: var(--c-text-subtle);
+  font-size: 1.1rem;
+  margin-bottom: 32px;
 }
 
-.airdrop-stats {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 25px;
-    flex-wrap: wrap;
-}
-
-.stat-item {
-    width: 48%;
-    background: #f0f2f5;
-    padding: 14px 16px;
-    border-radius: 10px;
-    text-align: center;
-    margin-bottom: 10px;
-}
-
-.stat-title {
-    font-size: 14px;
-    opacity: 0.8;
-}
-
-.stat-value {
-    font-size: 20px;
-    font-weight: 700;
-}
-
-/* ===============================
-   PARTICIPANT INFO (DÜZENLENEN ALAN)
-=============================== */
-
-.participant-info,
-.participants-text,
-.airdrop-small-text {
-    color: #000 !important;           /* SIYAH */
-    font-weight: 800 !important;      /* Daha kalın */
-}
-
-/* ===============================
-   TASK LIST
-=============================== */
-
-.task-box {
-    background: #fff;
-    padding: 20px;
-    border-radius: 16px;
-    margin-top: 20px;
-    box-shadow: rgba(0, 0, 0, 0.06) 0px 2px 6px;
-}
-
-.task-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #ececec;
-}
-
-.task-item:last-child {
-    border-bottom: none;
-}
-
-.task-title {
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.btn {
-    padding: 8px 18px;
-    border-radius: 8px;
-    background: #111;
-    color: #fff;
-    cursor: pointer;
-    border: none;
-    font-weight: 600;
-    transition: 0.25s;
-}
-
-.btn:hover {
-    opacity: 0.7;
-}
-
-/* ===============================
-   CLAIM BUTTONS
-=============================== */
-
-.claim-section {
-    text-align: center;
-    margin-top: 25px;
-}
-
-.claim-btn {
-    background: linear-gradient(90deg, #007aff, #0051c7);
-    padding: 12px 30px;
-    border-radius: 12px;
-    font-size: 18px;
-    font-weight: 700;
-}
-
-.claim-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-}
-
-/* ===============================
-   COUNTDOWN
-=============================== */
-
+/* === Countdown Stilleri === */
 .countdown-container {
-    margin: 20px 0;
-    text-align: center;
+  text-align: center;
+  margin-bottom: 28px;
+  background-color: var(--c-container-bg);
+  border: 1px solid var(--c-container-border);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
+  padding: 20px;
+  border-radius: 16px;
 }
 
 .countdown-title {
-    font-size: 18px;
-    font-weight: 700;
-    margin-bottom: 8px;
+  font-family: var(--f-header);
+  font-weight: 700;
+  color: var(--c-brand-orange);
+  font-size: 1.2rem;
+  margin-bottom: 12px;
+  text-shadow: none;
 }
 
-#countdown {
-    font-size: 22px;
-    font-weight: 800;
-    color: #000;
+.countdown {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  background: var(--c-task-bg);
+  border-radius: 16px;
+  padding: 14px 22px;
+  box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
 }
 
-/* ===============================
-   PROFILE PANEL
-=============================== */
-
-#profile-panel {
-    display: none;
-    background: #fff;
-    padding: 14px;
-    border-radius: 14px;
-    margin-top: 20px;
-    box-shadow: rgba(0, 0, 0, 0.07) 0px 2px 6px;
+.countdown span {
+  display: block;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--c-text-header); /* DEĞİŞTİ */
+  text-shadow: none; /* DEĞİŞTİ */
 }
 
-/* ===============================
-   BANNER
-=============================== */
+.countdown label {
+  font-size: .75rem;
+  color: var(--c-text-subtle);
+}
+
+/* === Buton Stilleri === */
+.wallet-actions {
+  text-align: center;
+  margin: 20px 0 34px;
+}
+
+.btn {
+  background: var(--c-brand-sky);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 600;
+  padding: 10px 22px;
+  cursor: pointer;
+  margin: 6px;
+  transition: .25s background-color, .25s transform, .25s box-shadow;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  background: var(--c-brand-sky-hover);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.btn:active {
+  transform: scale(.96);
+}
+
+/* Claim Butonları (Turuncu) */
+#claimTopBtn, #claimNowBtn {
+  background: var(--c-brand-orange);
+}
+#claimTopBtn:hover, #claimNowBtn:hover {
+  background: var(--c-brand-orange-hover);
+}
+
+/* Tamamlandı Butonları (Yeşil) */
+/* === GÜNCELLENDİ: .btn.completed === */
+.btn[disabled] {
+  background: var(--c-brand-green);
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+  opacity: 1.0; /* Tamamlandı butonları soluk olmasın */
+}
+/* X (Verify) butonu hariç, diğerleri */
+#verify-telegram[disabled], #verify-instagram[disabled] {
+    background: var(--c-brand-green);
+}
+#verify-x[disabled] { /* X butonu özel */
+    background: var(--c-brand-green);
+}
+
+
+#statusMsg {
+  color: var(--c-text-subtle);
+  font-size: .92rem;
+  margin-top: 8px;
+}
+
+/* === Görevler Stilleri === */
+.requirements {
+  background: var(--c-container-bg);
+  border: 1px solid var(--c-container-border);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
+  border-radius: 20px;
+  padding: 18px 22px 22px;
+  width: 85%;
+  max-width: 900px;
+  margin: 28px auto 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  box-sizing: border-box;
+}
+
+.requirements h2 {
+  font-family: var(--f-header);
+  text-align: center;
+  color: var(--c-text-header);
+  margin-bottom: 18px;
+  text-shadow: none;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--c-task-bg);
+  border-radius: 12px;
+  padding: 12px 16px;
+  width: calc(100% - 32px);
+  gap: 12px;
+  margin: 6px auto;
+  transition: .3s;
+}
+
+.task:hover {
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
+  transform: translateY(-2px);
+}
+
+.task img {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+/* === GÜNCELLENDİ: Yeni 2 Satırlı Yapı === */
+.task .task-description {
+  flex: 1;
+  text-align: left;
+  padding: 0 10px;
+  line-height: 1.4;
+}
+.task .task-description p {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600; /* Daha belirgin */
+  color: var(--c-text-body);
+}
+.task .task-description small {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--c-brand-orange); /* Puanlar turuncu */
+}
+
+
+/* === Airdrop Sekmesi Stilleri === */
+.airdrop-container {
+  width: 90%;
+  max-width: 600px;
+  margin: 28px auto;
+  background: var(--c-container-bg);
+  border: 1px solid var(--c-container-border);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
+  border-radius: 16px;
+  text-align: center;
+  padding: 24px 18px;
+}
+.airdrop-container h2 {
+   font-family: var(--f-header);
+}
+
+/* === Alt Navigasyon Stilleri === */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 420px;
+  background: rgba(248, 250, 252, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--c-container-border);
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+  padding: 10px 0;
+  z-index: 9999;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -4px 18px rgba(0,0,0,.05);
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--c-text-subtle);
+  font-size: .75rem;
+  cursor: pointer;
+  transition: .3s;
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.nav-item img {
+  width: 24px;
+  height: 24px;
+  margin-bottom: 3px;
+  filter: none;
+}
+
+.nav-item.active,
+.nav-item:hover {
+  color: var(--c-brand-sky);
+  text-shadow: none;
+}
+
+.nav-item.active img,
+.nav-item:hover img {
+  filter: drop-shadow(0 0 8px rgba(14, 165, 233, 0.5));
+}
+
+/* === Bölüm Geçiş Stilleri === */
+.section {
+  display: none;
+  opacity: 0;
+  transform: scale(.98);
+  transition: opacity .4s ease, transform .4s ease;
+}
+
+.section.active {
+  display: block;
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* === Modal/Popup Stilleri === */
+#modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  backdrop-filter: blur(10px) saturate(130%);
+}
+
+.modal-box {
+  background: var(--c-container-bg);
+  border: 2px solid var(--c-brand-sky);
+  border-radius: 14px;
+  padding: 24px 28px;
+  color: var(--c-text-body);
+  text-align: center;
+  box-shadow: 0 0 25px rgba(14, 165, 233, 0.5);
+}
 
 #topBanner {
-    position: fixed;
-    top: -50px;
-    left: 0;
-    right: 0;
-    background: red;
-    color: #fff;
-    padding: 14px;
-    text-align: center;
-    font-weight: 600;
-    transition: top 0.4s;
-    z-index: 999999;
+  position: fixed;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg,rgba(255,0,0,.9),rgba(255,100,0,.9));
+  color: #fff;
+  padding: 12px 30px;
+  border-radius: 8px;
+  font-weight: 600;
+  z-index: 100000;
+  transition: top .5s ease;
+  box-shadow: 0 0 15px rgba(255,0,0,.6);
 }
 
 #topBanner.show {
-    top: 0;
+  top: 20px;
 }
 
-/* ===============================
-   SUCCESS POPUP
-=============================== */
+#profile-panel {
+  position: fixed;
+  top: 15px;
+  right: 20px;
+  background: var(--c-container-bg);
+  color: var(--c-text-body);
+  border: 1px solid var(--c-container-border);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 9999;
+  display: none;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+#profile-panel .btn { /* Disconnect butonu */
+    background: #ef4444; /* Kırmızı */
+}
+#profile-panel .btn:hover {
+    background: #dc2626; /* Koyu Kırmızı */
+}
 
-#claimSuccessPopup {
-    display: none;
-    position: fixed;
-    z-index: 99999;
-    background: rgba(0,0,0,0.65);
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    justify-content: center;
-    align-items: center;
+
+footer {
+  text-align: center;
+  color: var(--c-text-subtle);
+  margin: 60px 0 100px; 
+  font-size: .9rem;
+}
+
+/* 🎉 Claim Success Popup */
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  backdrop-filter: blur(8px);
 }
 
 .popup-box {
-    background: #fff;
-    padding: 30px;
-    border-radius: 20px;
-    text-align: center;
-    width: 90%;
-    max-width: 360px;
+  background: var(--c-container-bg);
+  border: 2px solid var(--c-brand-sky);
+  border-radius: 12px;
+  padding: 30px 40px;
+  text-align: center;
+  box-shadow: 0 0 25px rgba(14, 165, 233, 0.5);
+  color: var(--c-text-body);
 }
 
 .popup-box h2 {
-    margin-bottom: 20px;
-    font-size: 22px;
-    font-weight: 700;
+  font-family: var(--f-header);
+  color: var(--c-brand-orange);
+  text-shadow: none;
+  margin-bottom: 10px;
 }
 
-.popup-box .btn {
-    width: 100%;
-    margin-top: 15px;
+.popup-box button {
+  background: var(--c-brand-sky);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 10px;
+  transition: 0.3s;
+}
+
+.popup-box button:hover {
+  box-shadow: 0 0 15px rgba(14, 165, 233, 0.7);
+  transform: translateY(-2px);
+  background: var(--c-brand-sky-hover);
+}
+
+@media (max-width: 768px) {
+  .countdown { flex-direction: column; gap: 10px; }
+  h1 { font-size: 2.2rem; }
+  .requirements { width: 92%; padding: 20px; gap: 12px; }
+  .btn { width: 80%; max-width: 300px; }
+  .task { max-width: 100%; padding: 16px; }
+}
+
+/* Geri sayım bitiş tarihi için stil */
+.countdown-end-date {
+  font-size: 0.9rem;
+  color: var(--c-text-subtle);
+  margin-top: 8px;
+  text-shadow: none;
+  opacity: 0.8;
+}
+
+/* === LEADERBOARD STİLLERİ (Aydınlık Tema) === */
+.leaderboard-container {
+  width: 90%;
+  max-width: 600px;
+  margin: 28px auto;
+  background: var(--c-container-bg);
+  border: 1px solid var(--c-container-border);
+  border-radius: 16px;
+  text-align: center;
+  padding: 24px 18px;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
+}
+.leaderboard-container h2 {
+    font-family: var(--f-header);
+}
+
+.leaderboard-table-header {
+  display: grid;
+  grid-template-columns: 1fr 3fr 2fr;
+  color: var(--c-brand-orange);
+  font-weight: 600;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(249, 115, 22, 0.4);
+  margin-bottom: 10px;
+}
+
+.leaderboard-table-header span:nth-child(2),
+.leaderboard-row span:nth-child(2) {
+  text-align: left;
+  padding-left: 10px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 1fr 3fr 2fr;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--c-task-bg);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  transition: .3s;
+}
+
+.leaderboard-row:hover {
+  background: rgba(14, 165, 233, 0.1);
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
+}
+
+.leaderboard-row span:first-child {
+  font-weight: 700;
+  color: var(--c-text-body);
+}
+.leaderboard-row span:nth-child(2) {
+  color: var(--c-text-subtle);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.leaderboard-row span:last-child {
+  font-weight: 600;
+  color: var(--c-brand-sky);
+}
+
+.leaderboard-loading {
+  color: var(--c-text-subtle);
+  padding: 20px;
+}
+
+/* === YENİ: Airdrop Stats Stilleri === */
+.airdrop-stats {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--c-container-border);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--c-text-subtle);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-family: var(--f-header);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--c-text-header);
+  /* Ana sayfadaki pulse-glow animasyonu */
+  animation: pulse-glow-sky 3s infinite ease-in-out;
+}
+
+@keyframes pulse-glow-sky {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgba(14, 165, 233, 0.3));
+    opacity: 0.9;
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(14, 165, 233, 0.7));
+    opacity: 1.0;
+  }
 }
