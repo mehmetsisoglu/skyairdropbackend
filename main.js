@@ -46,7 +46,7 @@ const AIRDROP_ABI_DATA = [
   {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"internalType":"uint256","name":"newAmount","type":"uint256"}],"name":"setAmountPerWallet","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[],"name":"token","outputs":[{"internalType":"contract IERC20","name":"","type":"address"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[],"name":"withdrawRemainingTokens","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ];
 
@@ -97,6 +97,7 @@ const TASKS = [
 
 /* ------------------ UX Widgets ------------------ */
 function ensureUXWidgets() {
+  // Progress bar
   if (!$("#task-progress")) {
     const req = document.querySelector(".requirements");
     if (req) {
@@ -116,6 +117,7 @@ function ensureUXWidgets() {
     }
   }
 
+  // Participants/Remaining sayaç kutusu
   if (!$("#participants-box")) {
     const cc = document.querySelector(".countdown-container");
     if (cc) {
@@ -138,17 +140,24 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ Participants Counter (LOCAL) ------------------ */
-function refreshParticipantsCounter() {
-  const participants = Math.floor(Math.random() * 3000) + 500;
-  const remaining = 5000 - participants;
-
-  const line = $("#participants-line");
-  if (line)
-    line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
+/* ------------------ Participants Counter (Backend üzerinden) ------------------ */
+async function refreshParticipantsCounter() {
+  try {
+    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/get-leaderboard`);
+    if (!res.ok) throw new Error("Leaderboard fetch failed");
+    const leaders = await res.json();
+    const count = Array.isArray(leaders) ? leaders.length : 0;
+    const max = 5000;
+    const remaining = Math.max(0, max - count);
+    const line = $("#participants-line");
+    if (line) line.textContent =
+      `Participants: ${count.toLocaleString()} / ${max.toLocaleString()} • Remaining: ${remaining.toLocaleString()}`;
+  } catch(e){
+    log("participants refresh error", e);
+  }
 }
 
-/* ------------------ Pool Fix ------------------ */
+/* ------------------ Pool Fix (UI) ------------------ */
 function adjustPoolCopyTo500M() {
   const stats = document.querySelectorAll(".airdrop-stats .stat-item .stat-title");
   stats.forEach(t => {
@@ -199,7 +208,8 @@ async function connectWallet() {
 
     const connectBtn = document.querySelector(".wallet-actions .btn");
     if (connectBtn) connectBtn.style.display = "none";
-    $("#statusMsg").textContent = "Network: Connected";
+    const st = $("#statusMsg");
+    if (st) st.textContent = "Network: Connected";
     updateProfilePanel(userWallet);
 
     await loadUserTasks();
@@ -212,7 +222,8 @@ function updateProfilePanel(addr) {
   const p = $("#profile-panel");
   if (!p) return;
   p.style.display = "block";
-  p.querySelector("p").textContent = "Wallet: " + addr.slice(0,6)+"..."+addr.slice(-4);
+  const txt = p.querySelector("p");
+  if (txt) txt.textContent = "Wallet: " + addr.slice(0,6)+"..."+addr.slice(-4);
 }
 
 /* ------------------ Tasks: Load/Save ------------------ */
@@ -230,7 +241,7 @@ async function loadUserTasks() {
 
 async function saveTaskToDB(taskId, btn) {
   try {
-    const updated = [...completedTasks, taskId];
+    const updated = [...new Set([...completedTasks, taskId])];
     const r = await fetchWithTimeout(`${NODE_SERVER_URL}/save-tasks`, {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
@@ -240,17 +251,22 @@ async function saveTaskToDB(taskId, btn) {
 
     if (d.success) {
       completedTasks = updated;
-      btn.innerText = "Completed ✅";
-      btn.disabled = true;
-      btn.style.background="linear-gradient(90deg,#00ff99,#00cc66)";
+      if (btn) {
+        btn.innerText = "Completed ✅";
+        btn.disabled = true;
+        btn.style.background="linear-gradient(90deg,#00ff99,#00cc66)";
+      }
       checkAllTasksCompleted();
       updateProgressBar();
+      refreshParticipantsCounter();
     } else throw new Error(d.message || "Save error");
 
   } catch(e){
-    const base = TASKS.find(t=>t.id===taskId)?.btnText || "Verify";
-    btn.innerText = base;
-    btn.disabled = false;
+    if (btn) {
+      const base = TASKS.find(t=>t.id===taskId)?.btnText || "Verify";
+      btn.innerText = base;
+      btn.disabled = false;
+    }
     showBanner("Task save error","red");
   }
 }
@@ -260,10 +276,9 @@ async function verifyTask(taskId) {
   if (!userWallet) return showBanner("Connect wallet first","red");
   const btn = document.getElementById(`verify-${taskId}`);
   if (!btn) return;
+  if (completedTasks.includes(taskId)) return showModal("This task is already completed ✅");
 
-  if (completedTasks.includes(taskId)) 
-    return showModal("This task is already completed ✅");
-
+  // Intent linkleri
   if (taskId === 'x') {
     window.open(SOCIAL_URLS.xFollowIntent,'_blank');
     window.open(SOCIAL_URLS.xRetweetIntent,'_blank');
@@ -290,7 +305,6 @@ async function verifyTask(taskId) {
         headers:{ "Content-Type": "application/json" },
         body:JSON.stringify({ username:username.trim(), wallet:userWallet })
       });
-
       const d = await r.json();
       if (!r.ok) throw new Error(d.message || "X verification failed");
 
@@ -333,12 +347,14 @@ function checkAllTasksCompleted() {
   if (all) {
     if (b1) { b1.disabled = false; b1.textContent = "🚀 Claim $SKYL"; }
     if (b2) { b2.disabled = false; b2.textContent = "🚀 Claim $SKYL"; }
-    $("#airdropStatus").textContent = "All tasks completed! You are eligible to claim.";
+    const st = $("#airdropStatus");
+    if (st) st.textContent = "All tasks completed! You are eligible to claim.";
     return true;
   } else {
     if (b1) { b1.disabled = true; b1.textContent = "Complete Tasks to Claim"; }
     if (b2) { b2.disabled = true; b2.textContent = "Complete Tasks to Claim"; }
-    $("#airdropStatus").textContent = "Complete all tasks to become eligible.";
+    const st = $("#airdropStatus");
+    if (st) st.textContent = "Complete all tasks to become eligible.";
     return false;
   }
 }
@@ -423,12 +439,15 @@ window.startCountdown = startCountdown;
 
 /* ------------------ Init ------------------ */
 document.addEventListener("DOMContentLoaded",() => {
+  // UX
   ensureUXWidgets();
   adjustPoolCopyTo500M();
 
+  // Sayaç
   refreshParticipantsCounter();
-  setInterval(refreshParticipantsCounter, 30000);
+  setInterval(refreshParticipantsCounter, 30000); // 30sn
 
+  // Events
   const connectBtn = document.querySelector(".wallet-actions .btn");
   if (connectBtn) connectBtn.addEventListener("click", connectWallet);
 
@@ -441,5 +460,6 @@ document.addEventListener("DOMContentLoaded",() => {
   $("#verify-telegram")?.addEventListener("click",()=>verifyTask("telegram"));
   $("#verify-instagram")?.addEventListener("click",()=>verifyTask("instagram"));
 
+  // Countdown
   window.startCountdown();
 });
