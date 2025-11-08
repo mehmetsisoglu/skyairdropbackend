@@ -1,4 +1,3 @@
-// src/server.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -14,7 +13,6 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/* ---------- App ---------- */
 const app = express();
 
 /* ---------- Security ---------- */
@@ -24,37 +22,22 @@ app.use(
   })
 );
 
-// Render (ve çoğu PaaS) bir reverse proxy arkasında çalışır.
-// IP doğruluğu için 'trust proxy' etkin, ama express-rate-limit
-// v7'nin agresif validasyon uyarılarını susturuyoruz.
-app.set("trust proxy", 1);
-
 /* ---------- CORS ---------- */
 const ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-// Skyl.online ve localhost geliştirme için makul default
-const defaultOrigins = [
-  "https://skyl.online",
-  "https://www.skyl.online",
-  "http://localhost:5173",
-  "http://localhost:3000",
-];
-
-const allowed = ORIGINS.length ? ORIGINS : defaultOrigins;
-
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // curl/postman vb.
-      return allowed.includes(origin) ? cb(null, true) : cb(new Error("CORS blocked"), false);
+      if (!origin || ORIGINS.length === 0) return cb(null, true);
+      return ORIGINS.includes(origin)
+        ? cb(null, true)
+        : cb(new Error("CORS blocked"), false);
     },
-    methods: ["GET", "POST", "OPTIONS"],
+    methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
-    credentials: false,
-    optionsSuccessStatus: 200,
   })
 );
 
@@ -71,8 +54,7 @@ const metaFile = path.join(__dirname, "meta.json");
 function loadJSON(file, fallback) {
   try {
     if (!fs.existsSync(file)) return fallback;
-    const raw = fs.readFileSync(file, "utf8");
-    return raw ? JSON.parse(raw) : fallback;
+    return JSON.parse(fs.readFileSync(file));
   } catch {
     return fallback;
   }
@@ -85,11 +67,9 @@ function saveJSON(file, data) {
 /* ---------- Helpers ---------- */
 const getIp = (req) =>
   (
-    // Render/Cloudflare vs. proxy zinciri
-    req.headers["x-forwarded-for"]?.toString().split(",")[0] ||
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.headers["x-real-ip"] ||
-    req.ip ||
-    req.socket?.remoteAddress ||
+    req.socket.remoteAddress ||
     ""
   ).toString();
 
@@ -125,7 +105,6 @@ function rememberActivity({ ip, fp, wallet }) {
     meta.walletsByFp[fp].add(wallet);
   }
 
-  // JSON’a yazarken Set'leri array'e çevir
   saveJSON(metaFile, {
     ip: meta.ip,
     fp: meta.fp,
@@ -137,7 +116,6 @@ function rememberActivity({ ip, fp, wallet }) {
     ),
   });
 
-  // Bellekte tekrar Set’e çevir
   meta.walletsByIp = Object.fromEntries(
     Object.entries(meta.walletsByIp).map(([k, v]) => [k, new Set([...v])])
   );
@@ -147,30 +125,18 @@ function rememberActivity({ ip, fp, wallet }) {
 }
 
 /* ---------- Rate Limits ---------- */
-// express-rate-limit v7 çok sıkı validasyon yapıyor.
-// Render arkasında X-Forwarded-For ve trust proxy nedeniyle
-// uyarı basmaması için validate bayraklarını kapatıyoruz.
-const commonRateOptions = {
-  windowMs: 60 * 1000,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: {
-    // Bu iki satır loga düşen "UNEXPECTED_X_FORWARDED_FOR" ve
-    // "PERMISSIVE_TRUST_PROXY" uyarılarını susturur.
-    trustProxy: false,
-    xForwardedForHeader: false,
-  },
-};
+app.set('trust proxy', 1); // IMPORTANT: trust proxy so X-Forwarded-For is allowed (for Render/nginx)
 
 app.use(
   rateLimit({
-    ...commonRateOptions,
+    windowMs: 60 * 1000,
     max: 60,
+    standardHeaders: true,
   })
 );
 
 const sensitiveLimiter = rateLimit({
-  ...commonRateOptions,
+  windowMs: 60 * 1000,
   max: 15,
 });
 
@@ -228,25 +194,10 @@ function scoreContext({ ip, fp }) {
 
 /* ---------- Endpoints ---------- */
 
-// ✅ Sağlık
-app.get("/health", (_req, res) => res.send("OK"));
-
-// ✅ Katılımcı/istatistik
-// Frontend'deki gerçek sayaç için.
-app.get("/airdrop-stats", (_req, res) => {
-  const leaders = loadJSON(leaderboardFile, []);
-  const participants = Array.isArray(leaders) ? leaders.length : 0;
-  const maxParticipants = 5000;
-  const remaining = Math.max(0, maxParticipants - participants);
-  res.json({ participants, remaining, maxParticipants });
-});
-
-// ✅ Leaderboard
-app.get("/get-leaderboard", (_req, res) => {
+app.get("/get-leaderboard", (req, res) => {
   res.json(loadJSON(leaderboardFile, []));
 });
 
-// ✅ Kullanıcı görevleri – get
 app.get("/get-tasks", (req, res) => {
   const wallet = (req.query.wallet || "").toLowerCase();
   if (!wallet) return res.json({ tasks: [] });
@@ -255,11 +206,10 @@ app.get("/get-tasks", (req, res) => {
   res.json({ tasks: db[wallet] || [] });
 });
 
-// ✅ Kullanıcı görevleri – save
 app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   const { wallet, tasks, fp } = req.body || {};
   if (!wallet || !Array.isArray(tasks))
-    return res.status(400).json({ success: false, message: "Bad payload" });
+    return res.status(400).json({ success: false });
 
   const ip = getIp(req);
   rememberActivity({ ip, fp, wallet: wallet.toLowerCase() });
@@ -268,7 +218,6 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   db[wallet.toLowerCase()] = tasks;
   saveJSON(tasksFile, db);
 
-  // Leaderboard puanı
   let leaders = loadJSON(leaderboardFile, []);
   const points =
     (tasks.includes("x") ? 50 : 0) +
@@ -288,32 +237,19 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   res.json({ success: true });
 });
 
-// ✅ X (Twitter) doğrulama
 app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   try {
     const { username, wallet, fp } = req.body || {};
-    if (!username || !wallet)
-      return res.status(400).json({ message: "username and wallet required" });
+    if (!username) return res.status(400).json({ message: "Username required" });
 
     const ip = getIp(req);
     rememberActivity({ ip, fp, wallet: (wallet || "").toLowerCase() });
 
-    const bearer =
-      process.env.TWITTER_BEARER_TOKEN ||
-      process.env.X_BEARER_TOKEN || // Eski anahtar ismi için yedek
-      "";
-    const tweetId =
-      process.env.AIRDROP_TWEET_ID ||
-      process.env.POST || // Render env ekranında "POST" olarak tutulmuş olabilir
-      "";
+    const bearer = process.env.TWITTER_BEARER_TOKEN || process.env.X_BEARER_TOKEN;
+    const tweetId = process.env.AIRDROP_TWEET_ID;
+    if (!bearer || !tweetId)
+      return res.status(500).json({ message: "X API not configured" });
 
-    if (!bearer || !tweetId) {
-      return res
-        .status(500)
-        .json({ message: "X API not configured (token or tweet id missing)" });
-    }
-
-    // 1) Kullanıcı
     const userRes = await fetch(
       `https://api.twitter.com/2/users/by/username/${encodeURIComponent(
         username
@@ -321,34 +257,19 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
       { headers: { Authorization: `Bearer ${bearer}` } }
     );
 
-    if (!userRes.ok) {
-      const t = await userRes.text();
-      return res.status(400).json({ message: "user lookup failed", detail: t });
-    }
-
     const userData = await userRes.json();
     const user = userData?.data;
     if (!user) return res.status(400).json({ message: "User not found" });
 
-    // 2) Retweet kontrol
-    // Not: Büyük RT listelerinde pagination gerekir; airdroplar için 100 yeterli
     const rtRes = await fetch(
       `https://api.twitter.com/2/tweets/${tweetId}/retweeted_by?max_results=100`,
       { headers: { Authorization: `Bearer ${bearer}` } }
     );
-
-    if (!rtRes.ok) {
-      const t = await rtRes.text();
-      return res
-        .status(400)
-        .json({ message: "retweet lookup failed", detail: t });
-    }
-
     const rtData = await rtRes.json();
     const didRT = !!rtData?.data?.some((u) => u.id === user.id);
+
     if (!didRT) return res.status(400).json({ message: "Retweet not found" });
 
-    // 3) Risk skoru
     const twitterScore = scoreTwitterUser(user);
     const ctxScore = scoreContext({ ip, fp });
     const risk = twitterScore + ctxScore;
@@ -364,7 +285,6 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   }
 });
 
-// ✅ (opsiyonel) claim öncesi basic risk kontrol
 app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   const { wallet, fp } = req.body || {};
   const ip = getIp(req);
@@ -373,8 +293,10 @@ app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   res.json({ ok: !hardBlock, risk });
 });
 
+app.get("/health", (req, res) => res.send("OK"));
+
 /* ---------- Start ---------- */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("✅ SKYL backend running on", PORT);
-});
+app.listen(PORT, () =>
+  console.log("✅ SKYL backend running on", PORT)
+);
