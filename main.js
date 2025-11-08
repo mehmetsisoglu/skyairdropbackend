@@ -1,11 +1,17 @@
 /* ==========================
-   Skyline Logic Airdrop - main.js (final)
+   Skyline Logic Airdrop v1.0 (Stabil + Hardened + UX Upgrades)
    ========================== */
 
+// ---------- Config ----------
 const DEV_MODE = false;
+
+// Backend (Render)
 const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com";
+
+// X Tweet ID
 const AIRDROP_TWEET_ID = "1983278116723392817";
 
+// Social links + intents
 const SOCIAL_URLS = {
   x: "https://x.com/SkylineLogicAI",
   xFollowIntent: "https://twitter.com/intent/user?screen_name=SkylineLogicAI",
@@ -15,9 +21,11 @@ const SOCIAL_URLS = {
   instagram: "https://www.instagram.com/skyline.logic",
 };
 
+// Contracts
 const AIRDROP_CONTRACT = "0x316549D421e454e08040efd8b7d331C7e5946724";
 const TOKEN_CONTRACT   = "0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c";
 
+// Network (BNB Smart Chain)
 const REQUIRED_CHAIN_ID = '0x38';
 const BNB_CHAIN_PARAMS = {
   chainId: '0x38',
@@ -27,12 +35,26 @@ const BNB_CHAIN_PARAMS = {
   blockExplorerUrls: ['https://bscscan.com']
 };
 
-const AIRDROP_ABI = [ /* kullanıdığın ABI (kopyala buraya) */ ];
-// Eğer AIRDROP_ABI değişikliği varsa mevcut ABI'yi koy.
+// Airdrop Contract ABI
+const AIRDROP_ABI_DATA = [
+  {"inputs":[{"internalType":"address","name":"_token","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"wallet","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"AirdropClaimed","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"WithdrawRemaining","type":"event"},
+  {"inputs":[],"name":"amountPerWallet","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"claimed","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"claimAirdrop","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"newAmount","type":"uint256"}],"name":"setAmountPerWallet","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"token","outputs":[{"internalType":"contract IERC20","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"withdrawRemainingTokens","outputs":[],"stateMutability":"nonpayable","type":"function"}
+];
 
+// ---------- State ----------
 let provider, signer, userWallet = null;
 let completedTasks = [];
 
+/* ------------------ Utils ------------------ */
 function log(...args){ if (DEV_MODE) console.log(...args); }
 function $(s){ return document.querySelector(s); }
 function $all(s){ return document.querySelectorAll(s); }
@@ -64,14 +86,16 @@ function showModal(msg) {
   o.innerHTML = `<div class="modal-box"><p>${msg}</p><button class="btn" onclick="closeModal()">OK</button></div>`;
   o.style.display = "flex";
 }
-function closeModal(){ const o=$("#modalOverlay"); if (o) o.style.display = "none"; }
+function closeModal(){ const o=$("#modalOverlay"); if (o) o.style.display="none"; }
 
+/* ------------------ Task List ------------------ */
 const TASKS = [
   { id:"x", label:"Follow X & Retweet Post", btnText:"Verify" },
   { id:"telegram", label:"Join our Telegram channel", btnText:"Join" },
   { id:"instagram", label:"Follow our Instagram", btnText:"Follow" }
 ];
 
+/* ------------------ UX Widgets ------------------ */
 function ensureUXWidgets() {
   if (!$("#task-progress")) {
     const req = document.querySelector(".requirements");
@@ -97,7 +121,6 @@ function ensureUXWidgets() {
     if (cc) {
       const div = document.createElement("div");
       div.id = "participants-box";
-      // Daha okunaklı olması için güçlü text renk/arka plan değil CSS ile yapılmalı, stil dosyasına ekleyebilirsin.
       div.style.cssText = "margin-top:10px;color:#cfe1ff;font-size:13px;opacity:.95;";
       div.innerHTML = `<div id="participants-line" style="margin-top:4px;">Participants: -- / 5,000 • Remaining: --</div>`;
       cc.appendChild(div);
@@ -115,24 +138,14 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ refreshParticipantsCounter (real backend) ------------------ */
-async function refreshParticipantsCounter() {
-  try {
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
-    if (!res.ok) throw new Error("stats fetch failed");
-    const data = await res.json();
-    const participants = data.participants ?? 0;
-    const remaining = data.remaining ?? (data.maxParticipants ? data.maxParticipants : 5000);
-    const line = $("#participants-line");
-    if (line) line.textContent = `Participants: ${participants.toLocaleString()} / ${data.maxParticipants || 5000} • Remaining: ${remaining.toLocaleString()}`;
-  } catch (e) {
-    log("refreshParticipantsCounter failed, falling back to local pseudo counter", e);
-    // fallback (keeps previous behaviour if backend unavailable)
-    const participants = Math.floor(Math.random() * 3000) + 500;
-    const remaining = 5000 - participants;
-    const line = $("#participants-line");
-    if (line) line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
-  }
+/* ------------------ Participants Counter (LOCAL) ------------------ */
+function refreshParticipantsCounter() {
+  const participants = Math.floor(Math.random() * 3000) + 500; // geçici sahte sayaç
+  const remaining = 5000 - participants;
+
+  const line = $("#participants-line");
+  if (line)
+    line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
 }
 
 /* ------------------ Pool Fix ------------------ */
@@ -146,23 +159,20 @@ function adjustPoolCopyTo500M() {
   });
 }
 
-/* ------------------ Network/Wallet/Tasks/Verify/Claim functions ------------------ */
-/* (kendi çalışan kodunun tüm fonksiyonlarını buraya koy) */
-/* Eğer burada eksik bir fonksiyon varsa, senin elindeki çalışan main.js'den kopyala. */
-/* Özet: checkAndSwitchNetwork, connectWallet, updateProfilePanel, loadUserTasks,
-   saveTaskToDB, verifyTask, updateTaskUI, checkAllTasksCompleted, claimTokens vb. */
-
+/* ------------------ Network ------------------ */
 async function checkAndSwitchNetwork() {
   if (!window.ethereum) return false;
   try {
     const cid = await window.ethereum.request({ method:'eth_chainId' });
     if (cid === REQUIRED_CHAIN_ID) return true;
+
     showBanner("Switch to BNB Smart Chain", "red");
     await window.ethereum.request({
       method:'wallet_switchEthereumChain',
       params:[{ chainId:REQUIRED_CHAIN_ID }]
     });
     return true;
+
   } catch(e){
     if (e.code === 4902) {
       await window.ethereum.request({
@@ -175,18 +185,23 @@ async function checkAndSwitchNetwork() {
   }
 }
 
+/* ------------------ Wallet ------------------ */
 async function connectWallet() {
   try {
     if (!window.ethereum) return showModal("Please install MetaMask or open in a Web3 browser.");
+
     provider = new ethers.BrowserProvider(window.ethereum);
     await provider.send("eth_requestAccounts", []);
     signer = await provider.getSigner();
     userWallet = (await signer.getAddress()).toLowerCase();
+
     await checkAndSwitchNetwork();
+
     const connectBtn = document.querySelector(".wallet-actions .btn");
     if (connectBtn) connectBtn.style.display = "none";
     $("#statusMsg").textContent = "Network: Connected";
     updateProfilePanel(userWallet);
+
     await loadUserTasks();
   } catch(e){
     showBanner("Wallet connection failed","red");
@@ -200,6 +215,7 @@ function updateProfilePanel(addr) {
   p.querySelector("p").textContent = "Wallet: " + addr.slice(0,6)+"..."+addr.slice(-4);
 }
 
+/* ------------------ Tasks: Load/Save ------------------ */
 async function loadUserTasks() {
   if (!userWallet) return;
   try {
@@ -209,7 +225,7 @@ async function loadUserTasks() {
     updateTaskUI();
     checkAllTasksCompleted();
     updateProgressBar();
-  } catch(e){ log("loadUserTasks error", e); }
+  } catch(e){}
 }
 
 async function saveTaskToDB(taskId, btn) {
@@ -221,6 +237,7 @@ async function saveTaskToDB(taskId, btn) {
       body:JSON.stringify({ wallet:userWallet, tasks:updated })
     });
     const d = await r.json();
+
     if (d.success) {
       completedTasks = updated;
       btn.innerText = "Completed ✅";
@@ -228,8 +245,8 @@ async function saveTaskToDB(taskId, btn) {
       btn.style.background="linear-gradient(90deg,#00ff99,#00cc66)";
       checkAllTasksCompleted();
       updateProgressBar();
-      refreshParticipantsCounter();
     } else throw new Error(d.message || "Save error");
+
   } catch(e){
     const base = TASKS.find(t=>t.id===taskId)?.btnText || "Verify";
     btn.innerText = base;
@@ -238,6 +255,7 @@ async function saveTaskToDB(taskId, btn) {
   }
 }
 
+/* ------------------ VERIFY TASK ------------------ */
 async function verifyTask(taskId) {
   if (!userWallet) return showBanner("Connect wallet first","red");
   const btn = document.getElementById(`verify-${taskId}`);
@@ -275,6 +293,7 @@ async function verifyTask(taskId) {
 
       btn.innerText = "Saving...";
       await saveTaskToDB(taskId, btn);
+
     } catch(e){
       btn.innerText = "Verify";
       btn.disabled = false;
@@ -286,6 +305,7 @@ async function verifyTask(taskId) {
   }
 }
 
+/* ------------------ UI ------------------ */
 function updateTaskUI() {
   TASKS.forEach(t => {
     const btn = document.getElementById(`verify-${t.id}`);
@@ -320,6 +340,7 @@ function checkAllTasksCompleted() {
   }
 }
 
+/* ------------------ Claim ------------------ */
 async function checkAndSwitchThenClaim() {
   const ok = await checkAndSwitchNetwork();
   if (!ok) { showBanner("Please switch to BNB Smart Chain to claim.", "red"); return false; }
@@ -337,7 +358,7 @@ async function claimTokens() {
   const b2 = $("#claimNowBtn");
 
   try {
-    const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI, signer);
+const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI_DATA, signer);
 
     if (b1) b1.textContent="Waiting for signature...";
     if (b2) b2.textContent="Waiting for signature...";
@@ -349,7 +370,7 @@ async function claimTokens() {
     await tx.wait();
 
     const popup = $("#claimSuccessPopup");
-    if (popup) popup.style.display = "flex";
+    if (popup) popup.style.display="flex";
 
     if (b1) { b1.textContent="✅ Claimed"; b1.disabled = true; }
     if (b2) { b2.textContent="✅ Claimed"; b2.disabled = true; }
