@@ -138,18 +138,14 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ Participants Counter (BACKEND) ------------------ */
-async function refreshParticipantsCounter() {
-  try {
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
-    if (!res.ok) throw new Error("stats");
-    const { participants = 0, max = 5000, remaining = Math.max(0, 5000 - (participants||0)) } = await res.json();
-    const line = $("#participants-line");
-    if (line)
-      line.textContent = `Participants: ${participants.toLocaleString()} / ${max.toLocaleString()} • Remaining: ${remaining.toLocaleString()}`;
-  } catch (e) {
-    // sessiz geç
-  }
+/* ------------------ Participants Counter (LOCAL) ------------------ */
+function refreshParticipantsCounter() {
+  const participants = Math.floor(Math.random() * 3000) + 500; // geçici sahte sayaç
+  const remaining = 5000 - participants;
+
+  const line = $("#participants-line");
+  if (line)
+    line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
 }
 
 /* ------------------ Pool Fix ------------------ */
@@ -249,7 +245,6 @@ async function saveTaskToDB(taskId, btn) {
       btn.style.background="linear-gradient(90deg,#00ff99,#00cc66)";
       checkAllTasksCompleted();
       updateProgressBar();
-      refreshParticipantsCounter();
     } else throw new Error(d.message || "Save error");
 
   } catch(e){
