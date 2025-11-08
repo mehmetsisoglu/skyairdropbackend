@@ -1,3 +1,4 @@
+// src/server.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -15,6 +16,10 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+/* ---------- Behind proxy (Render/CF) ---------- */
+// ERROR: 'X-Forwarded-For ... trust proxy false' uyarısı için şart
+app.set("trust proxy", 1);
+
 /* ---------- Security ---------- */
 app.use(
   helmet({
@@ -28,19 +33,19 @@ const ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // if ORIGINS is empty -> allow all (for dev); otherwise require match
-      if (!origin || ORIGINS.length === 0) return cb(null, true);
-      return ORIGINS.includes(origin)
-        ? cb(null, true)
-        : cb(new Error("CORS blocked"), false);
-    },
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
+const corsCfg = {
+  origin: (origin, cb) => {
+    if (!origin || ORIGINS.length === 0) return cb(null, true);
+    return ORIGINS.includes(origin)
+      ? cb(null, true)
+      : cb(new Error("CORS blocked"), false);
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsCfg));
+app.options("*", cors(corsCfg));
 
 app.use(express.json({ limit: "500kb" }));
 
@@ -77,7 +82,7 @@ const getIp = (req) =>
 const now = () => Date.now();
 const within = (ms, t) => now() - t <= ms;
 
-/* ---------- Meta Tracking (unchanged) ---------- */
+/* ---------- Meta Tracking ---------- */
 let meta = loadJSON(metaFile, {
   ip: {},
   fp: {},
@@ -106,6 +111,7 @@ function rememberActivity({ ip, fp, wallet }) {
     meta.walletsByFp[fp].add(wallet);
   }
 
+  // JSON dosyasına Set yazamayız, array'e çevirip yazıyoruz
   saveJSON(metaFile, {
     ip: meta.ip,
     fp: meta.fp,
@@ -117,6 +123,7 @@ function rememberActivity({ ip, fp, wallet }) {
     ),
   });
 
+  // Bellekte tekrar Set'e döndür
   meta.walletsByIp = Object.fromEntries(
     Object.entries(meta.walletsByIp).map(([k, v]) => [k, new Set([...v])])
   );
@@ -131,15 +138,18 @@ app.use(
     windowMs: 60 * 1000,
     max: 60,
     standardHeaders: true,
+    legacyHeaders: false,
   })
 );
 
 const sensitiveLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
-/* ---------- Risk Scoring (unchanged) ---------- */
+/* ---------- Risk Scoring ---------- */
 const MIN_FOLLOWERS = parseInt(process.env.MIN_FOLLOWERS || "5", 10);
 const MIN_ACCOUNT_AGE_DAYS = parseInt(
   process.env.MIN_ACCOUNT_AGE_DAYS || "7",
@@ -176,27 +186,34 @@ function scoreTwitterUser(u) {
 function scoreContext({ ip, fp }) {
   let s = 0;
 
-  const ipWallets = meta.walletsByIp[ip]
-    ? meta.walletsByIp[ip].size
-    : 0;
+  const ipWallets = meta.walletsByIp[ip] ? meta.walletsByIp[ip].size : 0;
   if (ipWallets > MAX_WALLETS_PER_IP_24H) s += 40;
 
   if (fp) {
-    const fpWallets = meta.walletsByFp[fp]
-      ? meta.walletsByFp[fp].size
-      : 0;
+    const fpWallets = meta.walletsByFp[fp] ? meta.walletsByFp[fp].size : 0;
     if (fpWallets > MAX_WALLETS_PER_FP_24H) s += 40;
   }
 
   return s;
 }
 
-/* ---------- Endpoints (existing) ---------- */
+/* ---------- Endpoints ---------- */
 
+// (Opsiyonel) Frontend tarafı isterse 404 olmasın diye
+app.get("/airdrop-stats", (req, res) => {
+  const leaders = loadJSON(leaderboardFile, []);
+  const participants = Array.isArray(leaders) ? leaders.length : 0;
+  const max = 5000;
+  const remaining = Math.max(0, max - participants);
+  res.json({ participants, remaining, max });
+});
+
+// ✅ Leaderboard
 app.get("/get-leaderboard", (req, res) => {
   res.json(loadJSON(leaderboardFile, []));
 });
 
+// ✅ Tasks get
 app.get("/get-tasks", (req, res) => {
   const wallet = (req.query.wallet || "").toLowerCase();
   if (!wallet) return res.json({ tasks: [] });
@@ -205,6 +222,7 @@ app.get("/get-tasks", (req, res) => {
   res.json({ tasks: db[wallet] || [] });
 });
 
+// ✅ Task save
 app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   const { wallet, tasks, fp } = req.body || {};
   if (!wallet || !Array.isArray(tasks))
@@ -236,6 +254,7 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   res.json({ success: true });
 });
 
+// ✅ X verify
 app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   try {
     const { username, wallet, fp } = req.body || {};
@@ -244,31 +263,40 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
     const ip = getIp(req);
     rememberActivity({ ip, fp, wallet: (wallet || "").toLowerCase() });
 
-    const bearer = process.env.TWITTER_BEARER_TOKEN;
+    // Render değişken adları: X_BEARER_TOKEN veya TWITTER_BEARER_TOKEN
+    const bearer =
+      process.env.TWITTER_BEARER_TOKEN || process.env.X_BEARER_TOKEN;
     const tweetId = process.env.AIRDROP_TWEET_ID;
-    if (!bearer || !tweetId)
-      return res.status(500).json({ message: "X API not configured" });
 
+    if (!bearer || !tweetId) {
+      return res
+        .status(500)
+        .json({ message: "X API not configured", need: ["X_BEARER_TOKEN or TWITTER_BEARER_TOKEN", "AIRDROP_TWEET_ID"] });
+    }
+
+    // 1) User info
     const userRes = await fetch(
       `https://api.twitter.com/2/users/by/username/${encodeURIComponent(
         username
       )}?user.fields=created_at,public_metrics,profile_image_url`,
-      { headers: { Authorization: `Bearer ${bearer}` } }
+      {
+        headers: { Authorization: `Bearer ${bearer}` },
+      }
     );
-
     const userData = await userRes.json();
     const user = userData?.data;
     if (!user) return res.status(400).json({ message: "User not found" });
 
+    // 2) Retweet check
     const rtRes = await fetch(
       `https://api.twitter.com/2/tweets/${tweetId}/retweeted_by?max_results=100`,
       { headers: { Authorization: `Bearer ${bearer}` } }
     );
     const rtData = await rtRes.json();
     const didRT = !!rtData?.data?.some((u) => u.id === user.id);
-
     if (!didRT) return res.status(400).json({ message: "Retweet not found" });
 
+    // 3) Risk Score
     const twitterScore = scoreTwitterUser(user);
     const ctxScore = scoreContext({ ip, fp });
     const risk = twitterScore + ctxScore;
@@ -284,6 +312,7 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   }
 });
 
+// ✅ Pre-claim (opsiyonel)
 app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   const { wallet, fp } = req.body || {};
   const ip = getIp(req);
@@ -292,21 +321,8 @@ app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   res.json({ ok: !hardBlock, risk });
 });
 
+// ✅ Health
 app.get("/health", (req, res) => res.send("OK"));
-
-/* ---------- NEW: airdrop-stats endpoint (returns participants + remaining) ---------- */
-app.get("/airdrop-stats", (req, res) => {
-  try {
-    const leaders = loadJSON(leaderboardFile, []);
-    const participants = Array.isArray(leaders) ? leaders.length : 0;
-    const max = 5000;
-    const remaining = Math.max(0, max - participants);
-    return res.json({ participants, remaining });
-  } catch (e) {
-    console.error("airdrop-stats error", e);
-    return res.status(500).json({ participants: 0, remaining: 5000 });
-  }
-});
 
 /* ---------- Start ---------- */
 const PORT = process.env.PORT || 3000;
