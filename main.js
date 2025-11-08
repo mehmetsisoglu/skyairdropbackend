@@ -138,33 +138,21 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ Participants Counter (LOCAL OR BACKEND) ------------------ */
-// Note: if backend exposes /airdrop-stats use refreshParticipantsCounter() that calls it.
-// Below is the fallback local counter; your deployed code uses backend endpoint.
+/* ------------------ Participants Counter (BACKEND) ------------------ */
 async function refreshParticipantsCounter() {
   try {
     const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
-    if (!res.ok) throw new Error();
-    const data = await res.json();
-
-    const participants = data.participants ?? 0;
-    const remaining = data.remaining ?? 5000;
-
+    if (!res.ok) throw new Error("stats");
+    const { participants = 0, max = 5000, remaining = Math.max(0, 5000 - (participants||0)) } = await res.json();
     const line = $("#participants-line");
     if (line)
-      line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
-  } catch(e){
-    // fallback: local fake counter (keeps UI alive if backend /airdrop-stats missing)
-    const participants = Math.floor(Math.random() * 3000) + 500;
-    const remaining = Math.max(0, 5000 - participants);
-    const line = $("#participants-line");
-    if (line)
-      line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
-    log("participants refresh error", e);
+      line.textContent = `Participants: ${participants.toLocaleString()} / ${max.toLocaleString()} • Remaining: ${remaining.toLocaleString()}`;
+  } catch (e) {
+    // sessiz geç
   }
 }
 
-/* ------------------ Pool Fix (UI) ------------------ */
+/* ------------------ Pool Fix ------------------ */
 function adjustPoolCopyTo500M() {
   const stats = document.querySelectorAll(".airdrop-stats .stat-item .stat-title");
   stats.forEach(t => {
