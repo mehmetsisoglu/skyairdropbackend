@@ -15,7 +15,10 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-/* ---------- Security ---------- */
+/* ---------- Proxy / Security ---------- */
+// Render / Nginx vb. arkasında çalıştığı için trust proxy şart (rate-limit IP algısı)
+app.set("trust proxy", 1);
+
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
@@ -54,7 +57,7 @@ const metaFile = path.join(__dirname, "meta.json");
 function loadJSON(file, fallback) {
   try {
     if (!fs.existsSync(file)) return fallback;
-    return JSON.parse(fs.readFileSync(file));
+    return JSON.parse(fs.readFileSync(file, "utf-8"));
   } catch {
     return fallback;
   }
@@ -69,7 +72,8 @@ const getIp = (req) =>
   (
     req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.headers["x-real-ip"] ||
-    req.socket.remoteAddress ||
+    req.ip ||
+    req.socket?.remoteAddress ||
     ""
   ).toString();
 
@@ -84,78 +88,75 @@ let meta = loadJSON(metaFile, {
   walletsByFp: {},
 });
 
+function reviveSets(obj) {
+  return Object.fromEntries(
+    Object.entries(obj || {}).map(([k, v]) => [k, new Set(Array.isArray(v) ? v : [])])
+  );
+}
+function serializeSets(obj) {
+  return Object.fromEntries(
+    Object.entries(obj || {}).map(([k, v]) => [k, Array.from(v || [])])
+  );
+}
+meta.walletsByIp = reviveSets(meta.walletsByIp);
+meta.walletsByFp = reviveSets(meta.walletsByFp);
+
 function rememberActivity({ ip, fp, wallet }) {
   const ts = now();
 
+  // IP window
   meta.ip[ip] ||= [];
   meta.ip[ip].push(ts);
   meta.ip[ip] = meta.ip[ip].filter((t) => within(24 * 3600 * 1000, t));
 
+  // FP window
   if (fp) {
     meta.fp[fp] ||= [];
     meta.fp[fp].push(ts);
     meta.fp[fp] = meta.fp[fp].filter((t) => within(24 * 3600 * 1000, t));
   }
 
+  // Uniqueness
   meta.walletsByIp[ip] ||= new Set();
-  meta.walletsByIp[ip].add(wallet);
+  if (wallet) meta.walletsByIp[ip].add(wallet);
 
   if (fp) {
     meta.walletsByFp[fp] ||= new Set();
-    meta.walletsByFp[fp].add(wallet);
+    if (wallet) meta.walletsByFp[fp].add(wallet);
   }
 
   saveJSON(metaFile, {
     ip: meta.ip,
     fp: meta.fp,
-    walletsByIp: Object.fromEntries(
-      Object.entries(meta.walletsByIp).map(([k, v]) => [k, [...v]])
-    ),
-    walletsByFp: Object.fromEntries(
-      Object.entries(meta.walletsByFp).map(([k, v]) => [k, [...v]])
-    ),
+    walletsByIp: serializeSets(meta.walletsByIp),
+    walletsByFp: serializeSets(meta.walletsByFp),
   });
-
-  meta.walletsByIp = Object.fromEntries(
-    Object.entries(meta.walletsByIp).map(([k, v]) => [k, new Set([...v])])
-  );
-  meta.walletsByFp = Object.fromEntries(
-    Object.entries(meta.walletsByFp).map(([k, v]) => [k, new Set([...v])])
-  );
 }
 
 /* ---------- Rate Limits ---------- */
-app.set('trust proxy', 1); // IMPORTANT: trust proxy so X-Forwarded-For is allowed (for Render/nginx)
-
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 60,
-    standardHeaders: true,
-  })
-);
+const baseLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  // güvenli key: proxy sonrası gerçek IP
+  keyGenerator: (req) => getIp(req),
+});
+app.use(baseLimiter);
 
 const sensitiveLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 15,
+  standardHeaders: true,
+  keyGenerator: (req) => getIp(req),
 });
 
 /* ---------- Risk Scoring ---------- */
 const MIN_FOLLOWERS = parseInt(process.env.MIN_FOLLOWERS || "5", 10);
-const MIN_ACCOUNT_AGE_DAYS = parseInt(
-  process.env.MIN_ACCOUNT_AGE_DAYS || "7",
-  10
-);
+const MIN_ACCOUNT_AGE_DAYS = parseInt(process.env.MIN_ACCOUNT_AGE_DAYS || "7", 10);
 const REQUIRE_PROFILE_IMAGE =
   (process.env.REQUIRE_PROFILE_IMAGE || "true") === "true";
-const MAX_WALLETS_PER_IP_24H = parseInt(
-  process.env.MAX_WALLETS_PER_IP_24H || "5",
-  10
-);
-const MAX_WALLETS_PER_FP_24H = parseInt(
-  process.env.MAX_WALLETS_PER_FP_24H || "3",
-  10
-);
+const MAX_WALLETS_PER_IP_24H = parseInt(process.env.MAX_WALLETS_PER_IP_24H || "5", 10);
+const MAX_WALLETS_PER_FP_24H = parseInt(process.env.MAX_WALLETS_PER_FP_24H || "3", 10);
 
 function scoreTwitterUser(u) {
   let score = 0;
@@ -166,26 +167,21 @@ function scoreTwitterUser(u) {
   if (ageDays < MIN_ACCOUNT_AGE_DAYS) score += 40;
   if (
     REQUIRE_PROFILE_IMAGE &&
-    (u.profile_image_url?.includes("default_profile_images") ||
-      !u.profile_image_url)
+    (u.profile_image_url?.includes("default_profile_images") || !u.profile_image_url)
   )
     score += 20;
 
-  return score;
+  return score; // 0 iyi, 100 riskli
 }
 
 function scoreContext({ ip, fp }) {
   let s = 0;
 
-  const ipWallets = meta.walletsByIp[ip]
-    ? meta.walletsByIp[ip].size
-    : 0;
+  const ipWallets = meta.walletsByIp[ip] ? meta.walletsByIp[ip].size : 0;
   if (ipWallets > MAX_WALLETS_PER_IP_24H) s += 40;
 
   if (fp) {
-    const fpWallets = meta.walletsByFp[fp]
-      ? meta.walletsByFp[fp].size
-      : 0;
+    const fpWallets = meta.walletsByFp[fp] ? meta.walletsByFp[fp].size : 0;
     if (fpWallets > MAX_WALLETS_PER_FP_24H) s += 40;
   }
 
@@ -194,10 +190,12 @@ function scoreContext({ ip, fp }) {
 
 /* ---------- Endpoints ---------- */
 
+// Leaderboard
 app.get("/get-leaderboard", (req, res) => {
   res.json(loadJSON(leaderboardFile, []));
 });
 
+// Tasks - get
 app.get("/get-tasks", (req, res) => {
   const wallet = (req.query.wallet || "").toLowerCase();
   if (!wallet) return res.json({ tasks: [] });
@@ -206,6 +204,7 @@ app.get("/get-tasks", (req, res) => {
   res.json({ tasks: db[wallet] || [] });
 });
 
+// Tasks - save (+ basit puan)
 app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   const { wallet, tasks, fp } = req.body || {};
   if (!wallet || !Array.isArray(tasks))
@@ -237,6 +236,7 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   res.json({ success: true });
 });
 
+// X (Twitter) verify
 app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   try {
     const { username, wallet, fp } = req.body || {};
@@ -245,31 +245,39 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
     const ip = getIp(req);
     rememberActivity({ ip, fp, wallet: (wallet || "").toLowerCase() });
 
-    const bearer = process.env.TWITTER_BEARER_TOKEN || process.env.X_BEARER_TOKEN;
-    const tweetId = process.env.AIRDROP_TWEET_ID;
+    // Env fallback: X_BEARER_TOKEN veya TWITTER_BEARER_TOKEN
+    const bearer =
+      process.env.X_BEARER_TOKEN ||
+      process.env.TWITTER_BEARER_TOKEN ||
+      process.env.TWITTER_BEARER; // olası eski isim
+    const tweetId =
+      process.env.AIRDROP_TWEET_ID ||
+      process.env.X_TWEET_ID;
+
     if (!bearer || !tweetId)
       return res.status(500).json({ message: "X API not configured" });
 
+    // 1) User info
     const userRes = await fetch(
       `https://api.twitter.com/2/users/by/username/${encodeURIComponent(
         username
       )}?user.fields=created_at,public_metrics,profile_image_url`,
       { headers: { Authorization: `Bearer ${bearer}` } }
     );
-
     const userData = await userRes.json();
     const user = userData?.data;
     if (!user) return res.status(400).json({ message: "User not found" });
 
+    // 2) Retweet check (first page; gerekirse pagination eklenir)
     const rtRes = await fetch(
       `https://api.twitter.com/2/tweets/${tweetId}/retweeted_by?max_results=100`,
       { headers: { Authorization: `Bearer ${bearer}` } }
     );
     const rtData = await rtRes.json();
     const didRT = !!rtData?.data?.some((u) => u.id === user.id);
-
     if (!didRT) return res.status(400).json({ message: "Retweet not found" });
 
+    // 3) Risk
     const twitterScore = scoreTwitterUser(user);
     const ctxScore = scoreContext({ ip, fp });
     const risk = twitterScore + ctxScore;
@@ -285,6 +293,7 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   }
 });
 
+// (Opsiyonel) Pre-claim
 app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   const { wallet, fp } = req.body || {};
   const ip = getIp(req);
@@ -293,6 +302,16 @@ app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   res.json({ ok: !hardBlock, risk });
 });
 
+// 🔹 Gerçek sayaç isteyen frontend için basit bir istatistik ucu
+app.get("/airdrop-stats", (req, res) => {
+  const leaders = loadJSON(leaderboardFile, []);
+  const participants = Array.isArray(leaders) ? leaders.length : 0;
+  const max = 5000;
+  const remaining = Math.max(0, max - participants);
+  res.json({ participants, remaining, max });
+});
+
+// Health
 app.get("/health", (req, res) => res.send("OK"));
 
 /* ---------- Start ---------- */
