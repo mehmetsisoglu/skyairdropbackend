@@ -1,3 +1,9 @@
+/**
+ * SKYL backend - server.js
+ * - trust proxy eklendi (render / proxy ortamları için)
+ * - /airdrop-stats endpoint eklendi (leaderboard'dan hesaplıyor)
+ */
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -14,6 +20,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+/* ---------- Trust proxy (important for X-Forwarded-For) ---------- */
+app.set("trust proxy", true); // <-- fixes express-rate-limit ValidationError in proxy envs
 
 /* ---------- Security ---------- */
 app.use(
@@ -55,7 +64,8 @@ function loadJSON(file, fallback) {
   try {
     if (!fs.existsSync(file)) return fallback;
     return JSON.parse(fs.readFileSync(file));
-  } catch {
+  } catch (err) {
+    console.warn("loadJSON error", file, err);
     return fallback;
   }
 }
@@ -116,6 +126,7 @@ function rememberActivity({ ip, fp, wallet }) {
     ),
   });
 
+  // restore sets
   meta.walletsByIp = Object.fromEntries(
     Object.entries(meta.walletsByIp).map(([k, v]) => [k, new Set([...v])])
   );
@@ -175,15 +186,11 @@ function scoreTwitterUser(u) {
 function scoreContext({ ip, fp }) {
   let s = 0;
 
-  const ipWallets = meta.walletsByIp[ip]
-    ? meta.walletsByIp[ip].size
-    : 0;
+  const ipWallets = meta.walletsByIp[ip] ? meta.walletsByIp[ip].size : 0;
   if (ipWallets > MAX_WALLETS_PER_IP_24H) s += 40;
 
   if (fp) {
-    const fpWallets = meta.walletsByFp[fp]
-      ? meta.walletsByFp[fp].size
-      : 0;
+    const fpWallets = meta.walletsByFp[fp] ? meta.walletsByFp[fp].size : 0;
     if (fpWallets > MAX_WALLETS_PER_FP_24H) s += 40;
   }
 
@@ -192,10 +199,12 @@ function scoreContext({ ip, fp }) {
 
 /* ---------- Endpoints ---------- */
 
+// Leaderboard
 app.get("/get-leaderboard", (req, res) => {
   res.json(loadJSON(leaderboardFile, []));
 });
 
+// Tasks get
 app.get("/get-tasks", (req, res) => {
   const wallet = (req.query.wallet || "").toLowerCase();
   if (!wallet) return res.json({ tasks: [] });
@@ -204,6 +213,7 @@ app.get("/get-tasks", (req, res) => {
   res.json({ tasks: db[wallet] || [] });
 });
 
+// Task save
 app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   const { wallet, tasks, fp } = req.body || {};
   if (!wallet || !Array.isArray(tasks))
@@ -235,6 +245,7 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   res.json({ success: true });
 });
 
+// Verify X
 app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   try {
     const { username, wallet, fp } = req.body || {};
@@ -243,7 +254,7 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
     const ip = getIp(req);
     rememberActivity({ ip, fp, wallet: (wallet || "").toLowerCase() });
 
-    const bearer = process.env.TWITTER_BEARER_TOKEN;
+    const bearer = process.env.TWITTER_BEARER_TOKEN || process.env.X_BEARER_TOKEN;
     const tweetId = process.env.AIRDROP_TWEET_ID;
     if (!bearer || !tweetId)
       return res.status(500).json({ message: "X API not configured" });
@@ -283,6 +294,7 @@ app.post("/verify-x", sensitiveLimiter, async (req, res) => {
   }
 });
 
+// Pre-claim
 app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   const { wallet, fp } = req.body || {};
   const ip = getIp(req);
@@ -291,10 +303,33 @@ app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   res.json({ ok: !hardBlock, risk });
 });
 
+// Health
 app.get("/health", (req, res) => res.send("OK"));
+
+/* ---------- NEW: airdrop-stats (real participants) ---------- */
+/*
+  Returns:
+  {
+    participants: <number>,
+    remaining: <number>,
+    maxParticipants: <number>
+  }
+
+  participants is derived from leaders.json length (unique wallets tracked).
+*/
+app.get("/airdrop-stats", (req, res) => {
+  try {
+    const leaders = loadJSON(leaderboardFile, []);
+    const max = 5000;
+    const participants = Array.isArray(leaders) ? leaders.length : 0;
+    const remaining = Math.max(0, max - participants);
+    res.json({ participants, remaining, maxParticipants: max });
+  } catch (err) {
+    console.error("/airdrop-stats error", err);
+    res.status(500).json({ participants: 0, remaining: 5000, maxParticipants: 5000 });
+  }
+});
 
 /* ---------- Start ---------- */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log("✅ SKYL backend running on", PORT)
-);
+app.listen(PORT, () => console.log("✅ SKYL backend running on", PORT));
