@@ -1,331 +1,218 @@
-// src/server.js
 import express from "express";
 import cors from "cors";
-import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
 import fetch from "node-fetch";
-import dotenv from "dotenv";
-dotenv.config();
-
-/* ---------- Paths ---------- */
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import pkg from "pg";
+const { Pool } = pkg;
 
 const app = express();
+app.use(express.json());
+app.use(cors());
 
-/* ---------- Behind proxy (Render/CF) ---------- */
-// ERROR: 'X-Forwarded-For ... trust proxy false' uyarısı için şart
+// ============================================
+// ✅ Render CORS
+// ============================================
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",")
+  : ["https://skyl.online"];
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: "GET,POST,OPTIONS",
+  })
+);
+
+// ============================================
+// ✅ DB
+// ============================================
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
+// ============================================
+// ✅ Rate limit
+// ============================================
 app.set("trust proxy", 1);
 
-/* ---------- Security ---------- */
-app.use(
-  helmet({
-    crossOriginResourcePolicy: false,
-  })
-);
-
-/* ---------- CORS ---------- */
-const ORIGINS = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-const corsCfg = {
-  origin: (origin, cb) => {
-    if (!origin || ORIGINS.length === 0) return cb(null, true);
-    return ORIGINS.includes(origin)
-      ? cb(null, true)
-      : cb(new Error("CORS blocked"), false);
-  },
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-app.use(cors(corsCfg));
-app.options("*", cors(corsCfg));
-
-app.use(express.json({ limit: "500kb" }));
-
-/* ---------- Static ---------- */
-app.use(express.static(__dirname));
-
-/* ---------- JSON Storage ---------- */
-const tasksFile = path.join(__dirname, "tasks.json");
-const leaderboardFile = path.join(__dirname, "leaders.json");
-const metaFile = path.join(__dirname, "meta.json");
-
-function loadJSON(file, fallback) {
-  try {
-    if (!fs.existsSync(file)) return fallback;
-    return JSON.parse(fs.readFileSync(file));
-  } catch {
-    return fallback;
-  }
-}
-
-function saveJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-/* ---------- Helpers ---------- */
-const getIp = (req) =>
-  (
-    req.headers["x-forwarded-for"]?.split(",")[0] ||
-    req.headers["x-real-ip"] ||
-    req.socket.remoteAddress ||
-    ""
-  ).toString();
-
-const now = () => Date.now();
-const within = (ms, t) => now() - t <= ms;
-
-/* ---------- Meta Tracking ---------- */
-let meta = loadJSON(metaFile, {
-  ip: {},
-  fp: {},
-  walletsByIp: {},
-  walletsByFp: {},
-});
-
-function rememberActivity({ ip, fp, wallet }) {
-  const ts = now();
-
-  meta.ip[ip] ||= [];
-  meta.ip[ip].push(ts);
-  meta.ip[ip] = meta.ip[ip].filter((t) => within(24 * 3600 * 1000, t));
-
-  if (fp) {
-    meta.fp[fp] ||= [];
-    meta.fp[fp].push(ts);
-    meta.fp[fp] = meta.fp[fp].filter((t) => within(24 * 3600 * 1000, t));
-  }
-
-  meta.walletsByIp[ip] ||= new Set();
-  meta.walletsByIp[ip].add(wallet);
-
-  if (fp) {
-    meta.walletsByFp[fp] ||= new Set();
-    meta.walletsByFp[fp].add(wallet);
-  }
-
-  // JSON dosyasına Set yazamayız, array'e çevirip yazıyoruz
-  saveJSON(metaFile, {
-    ip: meta.ip,
-    fp: meta.fp,
-    walletsByIp: Object.fromEntries(
-      Object.entries(meta.walletsByIp).map(([k, v]) => [k, [...v]])
-    ),
-    walletsByFp: Object.fromEntries(
-      Object.entries(meta.walletsByFp).map(([k, v]) => [k, [...v]])
-    ),
-  });
-
-  // Bellekte tekrar Set'e döndür
-  meta.walletsByIp = Object.fromEntries(
-    Object.entries(meta.walletsByIp).map(([k, v]) => [k, new Set([...v])])
-  );
-  meta.walletsByFp = Object.fromEntries(
-    Object.entries(meta.walletsByFp).map(([k, v]) => [k, new Set([...v])])
-  );
-}
-
-/* ---------- Rate Limits ---------- */
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 60,
-    standardHeaders: true,
-    legacyHeaders: false,
-  })
-);
-
 const sensitiveLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 15,
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 15 * 1000,
+  max: 10,
 });
 
-/* ---------- Risk Scoring ---------- */
-const MIN_FOLLOWERS = parseInt(process.env.MIN_FOLLOWERS || "5", 10);
-const MIN_ACCOUNT_AGE_DAYS = parseInt(
-  process.env.MIN_ACCOUNT_AGE_DAYS || "7",
-  10
-);
-const REQUIRE_PROFILE_IMAGE =
-  (process.env.REQUIRE_PROFILE_IMAGE || "true") === "true";
-const MAX_WALLETS_PER_IP_24H = parseInt(
-  process.env.MAX_WALLETS_PER_IP_24H || "5",
-  10
-);
-const MAX_WALLETS_PER_FP_24H = parseInt(
-  process.env.MAX_WALLETS_PER_FP_24H || "3",
-  10
-);
-
-function scoreTwitterUser(u) {
-  let score = 0;
-  const created = new Date(u.created_at).getTime();
-  const ageDays = (now() - created) / (24 * 3600 * 1000);
-
-  if ((u.public_metrics?.followers_count || 0) < MIN_FOLLOWERS) score += 40;
-  if (ageDays < MIN_ACCOUNT_AGE_DAYS) score += 40;
-  if (
-    REQUIRE_PROFILE_IMAGE &&
-    (u.profile_image_url?.includes("default_profile_images") ||
-      !u.profile_image_url)
-  )
-    score += 20;
-
-  return score;
-}
-
-function scoreContext({ ip, fp }) {
-  let s = 0;
-
-  const ipWallets = meta.walletsByIp[ip] ? meta.walletsByIp[ip].size : 0;
-  if (ipWallets > MAX_WALLETS_PER_IP_24H) s += 40;
-
-  if (fp) {
-    const fpWallets = meta.walletsByFp[fp] ? meta.walletsByFp[fp].size : 0;
-    if (fpWallets > MAX_WALLETS_PER_FP_24H) s += 40;
-  }
-
-  return s;
-}
-
-/* ---------- Endpoints ---------- */
-
-// (Opsiyonel) Frontend tarafı isterse 404 olmasın diye
-app.get("/airdrop-stats", (req, res) => {
-  const leaders = loadJSON(leaderboardFile, []);
-  const participants = Array.isArray(leaders) ? leaders.length : 0;
-  const max = 5000;
-  const remaining = Math.max(0, max - participants);
-  res.json({ participants, remaining, max });
-});
-
-// ✅ Leaderboard
-app.get("/get-leaderboard", (req, res) => {
-  res.json(loadJSON(leaderboardFile, []));
-});
-
-// ✅ Tasks get
-app.get("/get-tasks", (req, res) => {
-  const wallet = (req.query.wallet || "").toLowerCase();
-  if (!wallet) return res.json({ tasks: [] });
-
-  const db = loadJSON(tasksFile, {});
-  res.json({ tasks: db[wallet] || [] });
-});
-
-// ✅ Task save
-app.post("/save-tasks", sensitiveLimiter, (req, res) => {
-  const { wallet, tasks, fp } = req.body || {};
-  if (!wallet || !Array.isArray(tasks))
-    return res.status(400).json({ success: false });
-
-  const ip = getIp(req);
-  rememberActivity({ ip, fp, wallet: wallet.toLowerCase() });
-
-  const db = loadJSON(tasksFile, {});
-  db[wallet.toLowerCase()] = tasks;
-  saveJSON(tasksFile, db);
-
-  let leaders = loadJSON(leaderboardFile, []);
-  const points =
-    (tasks.includes("x") ? 50 : 0) +
-    (tasks.includes("telegram") ? 10 : 0) +
-    (tasks.includes("instagram") ? 10 : 0);
-
-  const idx = leaders.findIndex(
-    (l) => l.wallet.toLowerCase() === wallet.toLowerCase()
-  );
-
-  if (idx >= 0) leaders[idx].points = points;
-  else leaders.push({ wallet, points });
-
-  leaders.sort((a, b) => (b.points || 0) - (a.points || 0));
-  saveJSON(leaderboardFile, leaders);
-
-  res.json({ success: true });
-});
-
-// ✅ X verify
-app.post("/verify-x", sensitiveLimiter, async (req, res) => {
+// ============================================
+// ✅ RISK SCORE HESABI (EN BASİT FORM)
+// ============================================
+async function computeRiskScore(wallet) {
   try {
-    const { username, wallet, fp } = req.body || {};
-    if (!username) return res.status(400).json({ message: "Username required" });
+    let score = 0;
 
-    const ip = getIp(req);
-    rememberActivity({ ip, fp, wallet: (wallet || "").toLowerCase() });
+    // 1) Kullanıcı kayıtlı mı?
+    const user = await pool.query(
+      "SELECT * FROM users WHERE wallet = $1 LIMIT 1",
+      [wallet]
+    );
 
-    // Render değişken adları: X_BEARER_TOKEN veya TWITTER_BEARER_TOKEN
-    const bearer =
-      process.env.TWITTER_BEARER_TOKEN || process.env.X_BEARER_TOKEN;
-    const tweetId = process.env.AIRDROP_TWEET_ID;
+    if (!user.rows.length) return 50; // kayıt yok → nötr risk
 
-    if (!bearer || !tweetId) {
-      return res
-        .status(500)
-        .json({ message: "X API not configured", need: ["X_BEARER_TOKEN or TWITTER_BEARER_TOKEN", "AIRDROP_TWEET_ID"] });
+    const u = user.rows[0];
+
+    // 2) X doğrulanmamış → risk+
+    if (!u.x_verified) score += 40;
+
+    // 3) Tweet kontrolü yapılmamış → risk+
+    if (!u.tweet_verified) score += 30;
+
+    // 4) Telegram yok → risk+
+    if (!u.telegram_verified) score += 20;
+
+    // 5) Instagram yok → risk+
+    if (!u.instagram_verified) score += 10;
+
+    // 6) Çok hızlı tekrar deneme → risk+
+    const now = Date.now();
+    if (u.last_claim_time) {
+      const diff = now - Number(u.last_claim_time);
+      if (diff < 15000) score += 50;
     }
 
-    // 1) User info
-    const userRes = await fetch(
-      `https://api.twitter.com/2/users/by/username/${encodeURIComponent(
-        username
-      )}?user.fields=created_at,public_metrics,profile_image_url`,
-      {
-        headers: { Authorization: `Bearer ${bearer}` },
-      }
-    );
-    const userData = await userRes.json();
-    const user = userData?.data;
-    if (!user) return res.status(400).json({ message: "User not found" });
+    return Math.min(score, 100);
+  } catch (e) {
+    console.error("riskScore error:", e);
+    return 50;
+  }
+}
 
-    // 2) Retweet check
-    const rtRes = await fetch(
-      `https://api.twitter.com/2/tweets/${tweetId}/retweeted_by?max_results=100`,
-      { headers: { Authorization: `Bearer ${bearer}` } }
-    );
-    const rtData = await rtRes.json();
-    const didRT = !!rtData?.data?.some((u) => u.id === user.id);
-    if (!didRT) return res.status(400).json({ message: "Retweet not found" });
+// ============================================
+// ✅ /pre-claim → Claim öncesi güvenlik kontrolü
+// ============================================
+app.post("/pre-claim", sensitiveLimiter, async (req, res) => {
+  try {
+    const { wallet } = req.body;
+    if (!wallet)
+      return res.status(400).json({ ok: false, message: "Missing wallet" });
 
-    // 3) Risk Score
-    const twitterScore = scoreTwitterUser(user);
-    const ctxScore = scoreContext({ ip, fp });
-    const risk = twitterScore + ctxScore;
+    const riskScore = await computeRiskScore(wallet);
 
+    // ✅ FULL BLOCK
+    if (riskScore >= 80) {
+      return res.json({
+        ok: false,
+        canClaim: false,
+        riskScore,
+        status: "blocked",
+      });
+    }
+
+    // ✅ SOFT BLOCK
+    if (riskScore >= 40 && riskScore < 80) {
+      return res.json({
+        ok: false,
+        canClaim: false,
+        riskScore,
+        status: "soft_block",
+        waitSeconds: 15,
+      });
+    }
+
+    // ✅ ALLOWED
     return res.json({
-      success: true,
-      risk,
-      user: { id: user.id, username: user.username },
+      ok: true,
+      canClaim: true,
+      riskScore,
+      status: "allowed",
     });
   } catch (err) {
-    console.error("verify-x error:", err);
-    return res.status(500).json({ message: "Twitter API error" });
+    console.error("pre-claim error:", err);
+    return res.status(500).json({ ok: false, message: "server error" });
   }
 });
 
-// ✅ Pre-claim (opsiyonel)
-app.post("/pre-claim", sensitiveLimiter, (req, res) => {
-  const { wallet, fp } = req.body || {};
-  const ip = getIp(req);
-  const risk = scoreContext({ ip, fp });
-  const hardBlock = risk >= 80;
-  res.json({ ok: !hardBlock, risk });
+// ============================================
+// ✅ Mevcut endpointler (SEND FAKE)
+// ============================================
+
+// → GET tasks
+app.get("/get-tasks", async (req, res) => {
+  const { wallet } = req.query;
+
+  const tasks = await pool.query(
+    "SELECT * FROM users WHERE wallet = $1 LIMIT 1",
+    [wallet]
+  );
+
+  if (!tasks.rows.length) {
+    return res.json({
+      x: false,
+      telegram: false,
+      instagram: false,
+      points: 0,
+    });
+  }
+
+  const u = tasks.rows[0];
+
+  res.json({
+    x: u.x_verified,
+    telegram: u.telegram_verified,
+    instagram: u.instagram_verified,
+    points: u.points || 0,
+  });
 });
 
-// ✅ Health
-app.get("/health", (req, res) => res.send("OK"));
+// → X Verify (fake success)
+app.post("/verify-x", async (req, res) => {
+  const { wallet } = req.body;
 
-/* ---------- Start ---------- */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log("✅ SKYL backend running on", PORT)
-);
+  await pool.query(
+    `
+    INSERT INTO users (wallet, x_verified, points)
+    VALUES ($1, true, 50)
+    ON CONFLICT (wallet)
+    DO UPDATE SET x_verified = true, points = users.points + 50
+  `,
+    [wallet]
+  );
+
+  res.json({ ok: true, status: "verified_x" });
+});
+
+// → Telegram verify
+app.post("/verify-telegram", async (req, res) => {
+  const { wallet } = req.body;
+
+  await pool.query(
+    `
+      UPDATE users SET telegram_verified = true, points = points + 10
+      WHERE wallet = $1
+    `,
+    [wallet]
+  );
+
+  res.json({ ok: true });
+});
+
+// → Instagram verify
+app.post("/verify-instagram", async (req, res) => {
+  const { wallet } = req.body;
+
+  await pool.query(
+    `
+      UPDATE users SET instagram_verified = true, points = points + 10
+      WHERE wallet = $1
+    `,
+    [wallet]
+  );
+
+  res.json({ ok: true });
+});
+
+// ============================================
+// ✅ SERVER
+// ============================================
+const PORT = process.env.PORT || 10000;
+
+app.listen(PORT, () => {
+  console.log(`✅ SKYL backend running on ${PORT}`);
+});
