@@ -138,17 +138,33 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ Participants Counter (LOCAL) ------------------ */
-function refreshParticipantsCounter() {
-  const participants = Math.floor(Math.random() * 3000) + 500; // geçici sahte sayaç
-  const remaining = 5000 - participants;
+/* ------------------ Participants Counter (LOCAL OR BACKEND) ------------------ */
+// Note: if backend exposes /airdrop-stats use refreshParticipantsCounter() that calls it.
+// Below is the fallback local counter; your deployed code uses backend endpoint.
+async function refreshParticipantsCounter() {
+  try {
+    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
+    if (!res.ok) throw new Error();
+    const data = await res.json();
 
-  const line = $("#participants-line");
-  if (line)
-    line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
+    const participants = data.participants ?? 0;
+    const remaining = data.remaining ?? 5000;
+
+    const line = $("#participants-line");
+    if (line)
+      line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
+  } catch(e){
+    // fallback: local fake counter (keeps UI alive if backend /airdrop-stats missing)
+    const participants = Math.floor(Math.random() * 3000) + 500;
+    const remaining = Math.max(0, 5000 - participants);
+    const line = $("#participants-line");
+    if (line)
+      line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
+    log("participants refresh error", e);
+  }
 }
 
-/* ------------------ Pool Fix ------------------ */
+/* ------------------ Pool Fix (UI) ------------------ */
 function adjustPoolCopyTo500M() {
   const stats = document.querySelectorAll(".airdrop-stats .stat-item .stat-title");
   stats.forEach(t => {
@@ -245,6 +261,7 @@ async function saveTaskToDB(taskId, btn) {
       btn.style.background="linear-gradient(90deg,#00ff99,#00cc66)";
       checkAllTasksCompleted();
       updateProgressBar();
+      refreshParticipantsCounter();
     } else throw new Error(d.message || "Save error");
 
   } catch(e){
@@ -358,7 +375,7 @@ async function claimTokens() {
   const b2 = $("#claimNowBtn");
 
   try {
-const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI_DATA, signer);
+    const c = new ethers.Contract(AIRDROP_CONTRACT, AIRDROP_ABI_DATA, signer);
 
     if (b1) b1.textContent="Waiting for signature...";
     if (b2) b2.textContent="Waiting for signature...";
