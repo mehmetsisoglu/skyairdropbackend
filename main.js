@@ -138,27 +138,14 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ Participants Counter (REAL BACKEND) ------------------ */
-async function refreshParticipantsCounter() {
-  try {
-    const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
-    if (!res.ok) throw new Error("stats fetch failed");
+/* ------------------ Participants Counter (LOCAL) ------------------ */
+function refreshParticipantsCounter() {
+  const participants = Math.floor(Math.random() * 3000) + 500; // geçici sahte sayaç
+  const remaining = 5000 - participants;
 
-    const data = await res.json();
-    const participants = data.participants ?? 0;
-    const max = data.maxParticipants ?? 5000;
-    const remaining = data.remaining ?? (max - participants);
-
-    const line = $("#participants-line");
-    if (line)
-      line.textContent = `Participants: ${participants.toLocaleString()} / ${max.toLocaleString()} • Remaining: ${remaining.toLocaleString()}`;
-
-  } catch (e) {
-    // Backend çalışmazsa sayıyı sabit tut — rastgele olmasın
-    const line = $("#participants-line");
-    if (line)
-      line.textContent = `Participants: loading...`;
-  }
+  const line = $("#participants-line");
+  if (line)
+    line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
 }
 
 /* ------------------ Pool Fix ------------------ */
