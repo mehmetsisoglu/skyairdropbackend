@@ -31,6 +31,7 @@ const ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 app.use(
   cors({
     origin: (origin, cb) => {
+      // if ORIGINS is empty -> allow all (for dev); otherwise require match
       if (!origin || ORIGINS.length === 0) return cb(null, true);
       return ORIGINS.includes(origin)
         ? cb(null, true)
@@ -76,7 +77,7 @@ const getIp = (req) =>
 const now = () => Date.now();
 const within = (ms, t) => now() - t <= ms;
 
-/* ---------- Meta Tracking ---------- */
+/* ---------- Meta Tracking (unchanged) ---------- */
 let meta = loadJSON(metaFile, {
   ip: {},
   fp: {},
@@ -138,7 +139,7 @@ const sensitiveLimiter = rateLimit({
   max: 15,
 });
 
-/* ---------- Risk Scoring ---------- */
+/* ---------- Risk Scoring (unchanged) ---------- */
 const MIN_FOLLOWERS = parseInt(process.env.MIN_FOLLOWERS || "5", 10);
 const MIN_ACCOUNT_AGE_DAYS = parseInt(
   process.env.MIN_ACCOUNT_AGE_DAYS || "7",
@@ -190,7 +191,7 @@ function scoreContext({ ip, fp }) {
   return s;
 }
 
-/* ---------- Endpoints ---------- */
+/* ---------- Endpoints (existing) ---------- */
 
 app.get("/get-leaderboard", (req, res) => {
   res.json(loadJSON(leaderboardFile, []));
@@ -291,24 +292,21 @@ app.post("/pre-claim", sensitiveLimiter, (req, res) => {
   res.json({ ok: !hardBlock, risk });
 });
 
-/* ---------- NEW: Airdrop Stats ---------- */
+app.get("/health", (req, res) => res.send("OK"));
+
+/* ---------- NEW: airdrop-stats endpoint (returns participants + remaining) ---------- */
 app.get("/airdrop-stats", (req, res) => {
   try {
-    const db = loadJSON(tasksFile, {});
-    const participants = Object.keys(db).length;
-    const maxUsers = 5000;
-
-    res.json({
-      participants,
-      remaining: Math.max(0, maxUsers - participants),
-    });
-  } catch (err) {
-    console.error("stats error:", err);
-    res.status(500).json({ error: "stats_error" });
+    const leaders = loadJSON(leaderboardFile, []);
+    const participants = Array.isArray(leaders) ? leaders.length : 0;
+    const max = 5000;
+    const remaining = Math.max(0, max - participants);
+    return res.json({ participants, remaining });
+  } catch (e) {
+    console.error("airdrop-stats error", e);
+    return res.status(500).json({ participants: 0, remaining: 5000 });
   }
 });
-
-app.get("/health", (req, res) => res.send("OK"));
 
 /* ---------- Start ---------- */
 const PORT = process.env.PORT || 3000;
