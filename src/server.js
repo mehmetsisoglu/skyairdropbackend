@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 /* ---------- Trust proxy (important for X-Forwarded-For) ---------- */
-app.set("trust proxy", true); // <-- fixes express-rate-limit ValidationError in proxy envs
+app.set("trust proxy", 1); // <-- fixes express-rate-limit ValidationError in proxy envs
 
 /* ---------- Security ---------- */
 app.use(
