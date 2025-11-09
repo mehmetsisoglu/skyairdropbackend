@@ -210,6 +210,31 @@ app.get("/get-tasks", (req, res) => {
   res.json({ tasks: db[wallet] || [] });
 });
 
+//
+// === YENİ EKLENEN ENDPOINT BAŞLANGICI ===
+//
+app.get("/airdrop-stats", (req, res) => {
+  try {
+    // Katılımcı verilerini 'tasks.json' dosyasından yükle
+    const db = loadJSON(tasksFile, {});
+    
+    // 'db' objesindeki anahtar (cüzdan) sayısını say
+    const participants = Object.keys(db).length; 
+    const remaining = Math.max(0, 5000 - participants); // 5000 olan toplam limitten düş
+    
+    // Veriyi main.js'in beklediği formatta gönder
+    res.json({ participants, remaining });
+
+  } catch (e) {
+    console.error("Error getting /airdrop-stats:", e);
+    // Hata olursa, frontend'in bozulmaması için varsayılan bir değer gönder
+    res.status(500).json({ participants: 0, remaining: 5000 });
+  }
+});
+//
+// === YENİ EKLENEN ENDPOINT BİTİŞİ ===
+//
+
 app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   const { wallet, tasks, fp } = req.body || {};
   if (!wallet || !Array.isArray(tasks))
@@ -222,7 +247,7 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   db[wallet.toLowerCase()] = tasks;
   saveJSON(tasksFile, db);
 
-  let leaders = loadJSON(leaderboardFile, []);
+  let leaders = loadJSON(leaderformFile, []);
   const points =
     (tasks.includes("x") ? 50 : 0) +
     (tasks.includes("telegram") ? 10 : 0) +
