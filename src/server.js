@@ -7,6 +7,8 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import pkg from 'pg'; // <- BUNU EKLEYİN
+const { Pool } = pkg;  // <- BUNU EKLEYİN
 dotenv.config();
 
 /* ---------- Paths ---------- */
@@ -50,23 +52,48 @@ app.use(express.json({ limit: "500kb" }));
 /* ---------- Static ---------- */
 app.use(express.static(__dirname));
 
-/* ---------- JSON Storage ---------- */
-const tasksFile = path.join(__dirname, "tasks.json");
-const leaderboardFile = path.join(__dirname, "leaders.json");
-const metaFile = path.join(__dirname, "meta.json");
-
-function loadJSON(file, fallback) {
-  try {
-    if (!fs.existsSync(file)) return fallback;
-    return JSON.parse(fs.readFileSync(file));
-  } catch {
-    return fallback;
+/* ---------- Database (PostgreSQL) ---------- */
+// Veritabanı bağlantı havuzunu (pool) oluştur
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Render.com bağlantıları için bu gereklidir
   }
-}
+});
 
-function saveJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
+// Sunucu başladığında veritabanı tablolarının var olduğundan emin ol
+const initializeDatabase = async () => {
+  // Airdrop görevlerini ve puanları tutacak ana tablo
+  const tasksTableQuery = `
+    CREATE TABLE IF NOT EXISTS airdrop_tasks (
+      wallet VARCHAR(42) PRIMARY KEY,
+      tasks TEXT[] DEFAULT ARRAY[]::TEXT[],
+      points INTEGER DEFAULT 0,
+      twitter_user VARCHAR(100)
+    );
+  `;
+  
+  // IP/FP loglarını tutacak meta tablo (JSON'daki metaFile yerine)
+  const activityLogQuery = `
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id SERIAL PRIMARY KEY,
+      wallet VARCHAR(42),
+      ip_address VARCHAR(45),
+      fp_hash VARCHAR(100),
+      timestamp TIMESTAMPTZ DEFAULT NOW()
+    );
+  `;
+
+  try {
+    await pool.query(tasksTableQuery);
+    await pool.query(activityLogQuery);
+    console.log("✅ Veritabanı tabloları başarıyla kontrol edildi/oluşturuldu.");
+  } catch (e) {
+    console.error("❌ Veritabanı tablosu oluşturulamadı:", e);
+    // Hata ciddiyse sunucuyu durdur
+    process.exit(1);
+  }
+};
 
 /* ---------- Helpers ---------- */
 const getIp = (req) =>
