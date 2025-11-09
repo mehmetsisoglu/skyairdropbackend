@@ -247,7 +247,7 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
   db[wallet.toLowerCase()] = tasks;
   saveJSON(tasksFile, db);
 
-  let leaders = loadJSON(leaderformFile, []);
+  let leaders = loadJSON(leaderboardFile, []);
   const points =
     (tasks.includes("x") ? 50 : 0) +
     (tasks.includes("telegram") ? 10 : 0) +
