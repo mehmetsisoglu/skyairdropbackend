@@ -5,8 +5,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Gizli anahtarları .env'den (veya Render Ortam Değişkenlerinden) oku
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN; // Bu satırı da eklemeyi unutmayın
+const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID;
 
 let bot;
 
