@@ -456,4 +456,33 @@ document.addEventListener("DOMContentLoaded",() => {
   $("#verify-instagram")?.addEventListener("click",()=>verifyTask("instagram"));
 
   window.startCountdown();
+
+  //
+  // === ALT NAVİGASYON BUTONLARI ===
+  //
+  const sections = $all(".section");
+  const navItems = $all(".nav-item");
+
+  navItems.forEach(item => {
+    item.addEventListener("click", () => {
+      // Tıklanan butonun 'data-target' (örn: "home", "airdrop") özelliğini al
+      const targetId = item.getAttribute("data-target");
+
+      // 1. Tüm section'ları gizle
+      sections.forEach(s => s.classList.remove("active"));
+      
+      // 2. Sadece hedef section'ı göster
+      const targetSection = $(`#${targetId}`);
+      if (targetSection) {
+        targetSection.classList.add("active");
+      }
+
+      // 3. Tüm nav butonlarını inaktif yap
+      navItems.forEach(n => n.classList.remove("active"));
+      
+      // 4. Sadece tıklanan butonu aktif yap
+      item.classList.add("active");
+    });
+  });
+  // === ALT NAVİGASYON KODU BİTİŞİ ===
 });
