@@ -15,6 +15,10 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// PROXY'E GÜVEN (RENDER İÇİN KRİTİK)
+// Bu satır, rate-limit'ten ÖNCE gelmeli!
+app.set('trust proxy', 1);
+
 /* ---------- Security ---------- */
 app.use(
   helmet({
@@ -223,39 +227,7 @@ app.post("/save-tasks", sensitiveLimiter, (req, res) => {
     (tasks.includes("x") ? 50 : 0) +
     (tasks.includes("telegram") ? 10 : 0) +
     (tasks.includes("instagram") ? 10 : 0);
-  /* ---------- Endpoints ---------- */
 
-app.get("/get-leaderboard", (req, res) => {
-  res.json(loadJSON(leaderboardFile, []));
-});
-
-app.get("/get-tasks", (req, res) => {
-  const wallet = (req.query.wallet || "").toLowerCase();
-  if (!wallet) return res.json({ tasks: [] });
-
-  const db = loadJSON(tasksFile, {});
-  res.json({ tasks: db[wallet] || [] });
-});
-
-//
-// YENİ KODU BURAYA EKLEYİN (SATIR 232)
-//
-app.get("/airdrop-stats", (req, res) => {
-  try {
-    const db = loadJSON(tasksFile, {});
-    const participants = Object.keys(db).length; 
-    const remaining = Math.max(0, 5000 - participants);
-    
-    res.json({ participants, remaining });
-  } catch (e) {
-    console.error("Error getting /airdrop-stats:", e);
-    res.status(500).json({ participants: 0, remaining: 5000 });
-  }
-});
-
-app.post("/save-tasks", sensitiveLimiter, (req, res) => {
-  const { wallet, tasks, fp } = req.body || {};
-  // ... (geri kalan kodunuz)
   const idx = leaders.findIndex(
     (l) => l.wallet.toLowerCase() === wallet.toLowerCase()
   );
