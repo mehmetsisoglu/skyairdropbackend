@@ -420,6 +420,18 @@ async function claimTokens() {
     if (b2) b2.textContent="Pending...";
     await tx.wait();
 
+    // === YENİ KOD: Telegram'a "Claim" bildirimi gönder === (YAZIM HATASI DÜZELTİLDİ)
+    try {
+      await fetchWithTimeout(`${NODE_SERVER_URL}/notify-claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: userWallet }),
+      });
+    } catch (e) {
+      log("Telegram bildirim hatası (önemsiz):", e);
+    }
+    // === YENİ KOD BİTİŞİ ===
+
     const popup = $("#claimSuccessPopup");
     if (popup) popup.style.display="flex";
 
