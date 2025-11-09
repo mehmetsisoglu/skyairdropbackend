@@ -1,5 +1,5 @@
 /* ==========================
-   Skyline Logic Airdrop v1.0 (Stabil + Hardened + UX Upgrades)
+   Skyline Logic Airdrop v1.1 (Mobil MetaMask Düzeltmesi)
    ========================== */
 
 // ---------- Config ----------
@@ -272,53 +272,71 @@ async function saveTaskToDB(taskId, btn) {
   }
 }
 
-/* ------------------ VERIFY TASK ------------------ */
-async function verifyTask(taskId) {
+/* ------------------ VERIFY TASK (GÜNCELLENDİ) ------------------ */
+async function verifyTask(taskId, usernameFromInput = null) {
   if (!userWallet) return showBanner("Connect wallet first","red");
   const btn = document.getElementById(`verify-${taskId}`);
   if (!btn) return;
   if (completedTasks.includes(taskId)) return showModal("This task is already completed ✅");
 
-  if (taskId === 'x') {
-    window.open(SOCIAL_URLS.xFollowIntent,'_blank');
-    window.open(SOCIAL_URLS.xRetweetIntent,'_blank');
-    window.open(SOCIAL_URLS.x,'_blank');
-  } else if (taskId === 'telegram') {
-    try { window.open(SOCIAL_URLS.telegramDeep,'_blank'); } catch {}
-    window.open(SOCIAL_URLS.telegram,'_blank');
-  } else if (taskId === 'instagram') {
-    window.open(SOCIAL_URLS.instagram,'_blank');
-  }
-
-  btn.innerText = "Verifying...";
-  btn.disabled = true;
-
-  if (taskId === 'x') {
-    try {
-      const username = prompt("Enter your X (Twitter) username (without @):");
-      if (!username) { btn.innerText = "Verify"; btn.disabled = false; return; }
-
-      btn.innerText = "Checking X...";
-
-      const r = await fetchWithTimeout(`${NODE_SERVER_URL}/verify-x`, {
-        method:'POST',
-        headers:{ "Content-Type": "application/json" },
-        body:JSON.stringify({ username:username.trim(), wallet:userWallet })
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.message || "X verification failed");
-
-      btn.innerText = "Saving...";
-      await saveTaskToDB(taskId, btn);
-
-    } catch(e){
-      btn.innerText = "Verify";
-      btn.disabled = false;
-      return showBanner("X verification failed: "+(e.message||"Network error"), "red");
+  // 'x' dışındaki görevler (Telegram, Instagram)
+  if (taskId !== 'x') {
+    if (taskId === 'telegram') {
+      try { window.open(SOCIAL_URLS.telegramDeep,'_blank'); } catch {}
+      window.open(SOCIAL_URLS.telegram,'_blank');
+    } else if (taskId === 'instagram') {
+      window.open(SOCIAL_URLS.instagram,'_blank');
     }
-  } else {
+
+    btn.innerText = "Verifying...";
+    btn.disabled = true;
     btn.innerText = "Saving...";
     await saveTaskToDB(taskId, btn);
+    return; // Görevi bitir
+  }
+
+  // --- Buradan sonrası SADECE 'x' GÖREVİ içindir ---
+  // 'btn' orijinal '#verify-x' butonudur (şu an gizli)
+  // 'usernameFromInput' ise 'Submit' butonundan gelen kullanıcı adıdır
+
+  const submitBtn = $("#submit-x-username"); // Bu, "Submit" butonu
+  
+  submitBtn.innerText = "Verifying...";
+  submitBtn.disabled = true;
+
+  try {
+    const username = usernameFromInput; // Parametreyi kullan
+    if (!username) { 
+       throw new Error("Username was not provided.");
+    }
+
+    submitBtn.innerText = "Checking X...";
+
+    const r = await fetchWithTimeout(`${NODE_SERVER_URL}/verify-x`, {
+      method:'POST',
+      headers:{ "Content-Type": "application/json" },
+      body:JSON.stringify({ username: username, wallet:userWallet })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.message || "X verification failed");
+
+    submitBtn.innerText = "Saving...";
+    // saveTaskToDB, orijinal 'btn'i ("#verify-x") "Completed" olarak günceller
+    await saveTaskToDB(taskId, btn); 
+    
+    // Başarılı: Giriş alanını gizle, "Completed" butonunu göster
+    $("#x-input-area").style.display = "none";
+    btn.style.display = "block"; // 'btn' artık görünür ve "Completed ✅" yazıyor
+
+  } catch(e){
+    // Hata: Arayüzü sıfırla
+    submitBtn.innerText = "Submit";
+    submitBtn.disabled = false;
+    
+    $("#x-input-area").style.display = "none"; // Giriş alanını gizle
+    btn.style.display = "block"; // Orijinal "Verify" butonunu geri göster
+    
+    return showBanner("X verification failed: "+(e.message||"Network error"), "red");
   }
 }
 
@@ -435,7 +453,7 @@ function startCountdown() {
 }
 window.startCountdown = startCountdown;
 
-/* ------------------ Init ------------------ */
+/* ------------------ Init (GÜNCELLENDİ) ------------------ */
 document.addEventListener("DOMContentLoaded",() => {
   ensureUXWidgets();
   adjustPoolCopyTo500M();
@@ -451,7 +469,31 @@ document.addEventListener("DOMContentLoaded",() => {
 
   $("#closePopup")?.addEventListener("click",()=>{ $("#claimSuccessPopup").style.display="none"; });
 
-  $("#verify-x")?.addEventListener("click",()=>verifyTask("x"));
+  // === X (Twitter) BUTONLARI GÜNCELLENDİ ===
+  // 1. "Verify" butonu artık X sekmelerini açar ve giriş alanını gösterir
+  $("#verify-x")?.addEventListener("click", () => {
+    // Önce sosyal medya sekmelerini aç
+    window.open(SOCIAL_URLS.xFollowIntent,'_blank');
+    window.open(SOCIAL_URLS.xRetweetIntent,'_blank');
+    window.open(SOCIAL_URLS.x,'_blank');
+    
+    // Şimdi giriş alanını göster
+    $("#x-input-area").style.display = "block"; // Yeni giriş alanını göster
+    $("#verify-x").style.display = "none";     // "Verify" butonunu gizle
+  });
+
+  // 2. Yeni "Submit" butonu asıl 'verifyTask' fonksiyonunu çağırır
+  $("#submit-x-username")?.addEventListener("click", () => {
+    const username = $("#x-username-input")?.value;
+    if (!username || username.trim() === "") {
+      showBanner("Please enter your username", "red");
+      return;
+    }
+    // verifyTask'ı 'username' ile çağır
+    verifyTask("x", username.trim()); 
+  });
+  
+  // === DİĞER BUTONLAR (Değişmedi) ===
   $("#verify-telegram")?.addEventListener("click",()=>verifyTask("telegram"));
   $("#verify-instagram")?.addEventListener("click",()=>verifyTask("instagram"));
 
