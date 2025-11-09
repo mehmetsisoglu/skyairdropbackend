@@ -1,5 +1,5 @@
 /* ==========================
-   Skyline Logic Airdrop v1.1 (Mobil MetaMask Düzeltmesi)
+   Skyline Logic Airdrop v1.2 (Always-Visible Input)
    ========================== */
 
 // ---------- Config ----------
@@ -138,9 +138,7 @@ function updateProgressBar() {
   if (bar) bar.style.width = `${pct}%`;
 }
 
-/* ------------------ Participants Counter (LOCAL OR BACKEND) ------------------ */
-// Note: if backend exposes /airdrop-stats use refreshParticipantsCounter() that calls it.
-// Below is the fallback local counter; your deployed code uses backend endpoint.
+/* ------------------ Participants Counter ------------------ */
 async function refreshParticipantsCounter() {
   try {
     const res = await fetchWithTimeout(`${NODE_SERVER_URL}/airdrop-stats`);
@@ -154,9 +152,8 @@ async function refreshParticipantsCounter() {
     if (line)
       line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
   } catch(e){
-    // fallback: local fake counter (keeps UI alive if backend /airdrop-stats missing)
-    const participants = Math.floor(Math.random() * 3000) + 500;
-    const remaining = Math.max(0, 5000 - participants);
+    const participants = 500;
+    const remaining = 4500;
     const line = $("#participants-line");
     if (line)
       line.textContent = `Participants: ${participants.toLocaleString()} / 5,000 • Remaining: ${remaining.toLocaleString()}`;
@@ -246,7 +243,7 @@ async function loadUserTasks() {
 
 async function saveTaskToDB(taskId, btn) {
   try {
-    const updated = [...completedTasks, taskId];
+    const updated = Array.from(new Set([...completedTasks, taskId])); // Yinelenmeyi önle
     const r = await fetchWithTimeout(`${NODE_SERVER_URL}/save-tasks`, {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
@@ -296,10 +293,11 @@ async function verifyTask(taskId, usernameFromInput = null) {
   }
 
   // --- Buradan sonrası SADECE 'x' GÖREVİ içindir ---
-  // 'btn' orijinal '#verify-x' butonudur (şu an gizli)
-  // 'usernameFromInput' ise 'Submit' butonundan gelen kullanıcı adıdır
-
-  const submitBtn = $("#submit-x-username"); // Bu, "Submit" butonu
+  
+  // 'btn' Orijinal, gizli '#verify-x' butonudur.
+  // Bu butonu, görev tamamlandığında "Completed" olarak göstermek için kullanacağız.
+  
+  const submitBtn = $("#submit-x-username"); // Bu, görünür olan "Submit" butonu
   
   submitBtn.innerText = "Verifying...";
   submitBtn.disabled = true;
@@ -321,7 +319,8 @@ async function verifyTask(taskId, usernameFromInput = null) {
     if (!r.ok) throw new Error(d.message || "X verification failed");
 
     submitBtn.innerText = "Saving...";
-    // saveTaskToDB, orijinal 'btn'i ("#verify-x") "Completed" olarak günceller
+    
+    // saveTaskToDB, *orijinal* 'btn'i ("#verify-x") "Completed" olarak günceller
     await saveTaskToDB(taskId, btn); 
     
     // Başarılı: Giriş alanını gizle, "Completed" butonunu göster
@@ -329,12 +328,12 @@ async function verifyTask(taskId, usernameFromInput = null) {
     btn.style.display = "block"; // 'btn' artık görünür ve "Completed ✅" yazıyor
 
   } catch(e){
-    // Hata: Arayüzü sıfırla
+    // Hata: Arayüzü sıfırla (Submit butonunu aktif et)
     submitBtn.innerText = "Submit";
     submitBtn.disabled = false;
     
-    $("#x-input-area").style.display = "none"; // Giriş alanını gizle
-    btn.style.display = "block"; // Orijinal "Verify" butonunu geri göster
+    // Not: Hata durumunda, giriş alanı görünür kalır ve 'verify-x' butonu gizli kalır
+    // Bu, kullanıcının tekrar denemesine izin verir.
     
     return showBanner("X verification failed: "+(e.message||"Network error"), "red");
   }
@@ -345,14 +344,31 @@ function updateTaskUI() {
   TASKS.forEach(t => {
     const btn = document.getElementById(`verify-${t.id}`);
     if (!btn) return;
+    
     if (completedTasks.includes(t.id)) {
       btn.innerText = "Completed ✅";
       btn.disabled = true;
       btn.style.background="linear-gradient(90deg,#00ff99,#00cc66)";
+      
+      // Eğer X görevi tamamlanmışsa, giriş alanını gizle
+      if (t.id === 'x') {
+        const inputArea = $("#x-input-area");
+        if (inputArea) inputArea.style.display = "none";
+        btn.style.display = "block"; // Completed butonunun göründüğünden emin ol
+      }
     } else {
-      btn.innerText = t.btnText;
-      btn.disabled = false;
-      btn.style.background="linear-gradient(90deg,#4a67ff,#8338ec)";
+      // Görev tamamlanmamışsa
+      if (t.id === 'x') {
+        // X görevi ise, 'verify' butonunu gizle ve giriş alanını göster
+        const inputArea = $("#x-input-area");
+        if (inputArea) inputArea.style.display = "block"; // 'block' veya 'flex' vs. olmalı
+        btn.style.display = "none"; // Orijinal 'verify' butonu gizli
+      } else {
+        // Diğer görevler normal butonunu göstersin
+        btn.innerText = t.btnText;
+        btn.disabled = false;
+        btn.style.background="linear-gradient(90deg,#4a67ff,#8338ec)";
+      }
     }
   });
 }
@@ -470,25 +486,21 @@ document.addEventListener("DOMContentLoaded",() => {
   $("#closePopup")?.addEventListener("click",()=>{ $("#claimSuccessPopup").style.display="none"; });
 
   // === X (Twitter) BUTONLARI GÜNCELLENDİ ===
-  // 1. "Verify" butonu artık X sekmelerini açar ve giriş alanını gösterir
-  $("#verify-x")?.addEventListener("click", () => {
-    // Önce sosyal medya sekmelerini aç
-    window.open(SOCIAL_URLS.xFollowIntent,'_blank');
-    window.open(SOCIAL_URLS.xRetweetIntent,'_blank');
-    window.open(SOCIAL_URLS.x,'_blank');
-    
-    // Şimdi giriş alanını göster
-    $("#x-input-area").style.display = "block"; // Yeni giriş alanını göster
-    $("#verify-x").style.display = "none";     // "Verify" butonunu gizle
-  });
-
-  // 2. Yeni "Submit" butonu asıl 'verifyTask' fonksiyonunu çağırır
+  // (Eski 'verify-x' click listener'ı kaldırıldı, çünkü o buton artık gizli)
+  
+  // "Submit" butonu artık hem X pencerelerini açar hem de doğrulamayı tetikler
   $("#submit-x-username")?.addEventListener("click", () => {
     const username = $("#x-username-input")?.value;
     if (!username || username.trim() === "") {
       showBanner("Please enter your username", "red");
       return;
     }
+    
+    // Sosyal medya sekmelerini aç
+    window.open(SOCIAL_URLS.xFollowIntent,'_blank');
+    window.open(SOCIAL_URLS.xRetweetIntent,'_blank');
+    window.open(SOCIAL_URLS.x,'_blank');
+
     // verifyTask'ı 'username' ile çağır
     verifyTask("x", username.trim()); 
   });
