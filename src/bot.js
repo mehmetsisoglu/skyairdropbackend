@@ -56,21 +56,22 @@ Bir kullanıcı airdrop'unu başarıyla talep etti!
 };
 
 /**
- * BÖLÜM 2: Alım/Satım Bildirimi (Fotoğraflı)
+* BÖLÜM 2: Alım/Satım Bildirimi (Fotoğraflı)
+ * Mesajı Markdown formatında alır ve İngilizce olarak gönderir.
  */
 export const sendBuyDetected = async (message, txHash) => {
   if (!bot) return; 
 
-  // Mesaja TxHash linkini ekle
-  const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">İşlemi Gör (BscScan)</a>`;
+  // Botun göndereceği altyazı (tamamen İngilizce)
+  const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">View Transaction on BscScan</a>`;
 
   try {
     await bot.sendPhoto(CHAT_ID, BUY_SELL_MASCOT_URL, {
       caption: finalCaption,
       parse_mode: "HTML",
     });
-    console.log("[bot.js] ✅ Telegram (Buy/Sell) bildirimi gönderildi.");
+    console.log("[bot.js] ✅ Telegram (Buy/Sell) notification sent (EN).");
   } catch (error) {
-    console.error("[bot.js] ❌ Telegram'a Alım/Satım fotoğrafı gönderirken hata:", error.message);
+    console.error("[bot.js] ❌ Telegram (Buy/Sell) notification error:", error.message);
   }
 };
