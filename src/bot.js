@@ -13,8 +13,8 @@ const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID; // Bu değişken adını doğru
 
 // --- MASCOT URL'LERİ (Lütfen bunları kendi URL'lerinizle değiştirin) ---
 // Not: Bu URL'ler, resimlerinizi yüklediğiniz yerin tam adresi olmalıdır.
-const AIRDROP_MASCOT_URL = "https://skyl.online/img/Skyhawk_Mascot_DarkMode_MidContrast.jpg";
-const BUY_SELL_MASCOT_URL = "https://skyl.online/img/Skyhawk_Mascot_DarkMode_MidContrast.jpg";
+const AIRDROP_MASCOT_URL = "https://skyl.online/images/Skyhawk_Airdrop.png";
+const BUY_SELL_MASCOT_URL = "https://skyl.online/images/Skyhawk_Buy.png.jpg";
 // -----------------------------------------------------------------
 
 let bot;
