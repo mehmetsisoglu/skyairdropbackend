@@ -1,5 +1,5 @@
 /* ==============================================
-   Skyline Logic - Telegram Bildirim Motoru v4.0 (SADECE METİN)
+   Skyline Logic - Telegram Bildirim Motoru v5.0 (GÖRSEL VE METİN)
    ============================================== */
 
 import TelegramBot from "node-telegram-bot-api";
@@ -10,9 +10,11 @@ dotenv.config();
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID; 
 
-// Sadece Metin Testi için URL'ler DEĞERLENDİRME DIŞI
-// const AIRDROP_MASCOT_URL = "..."; 
-// const BUY_SELL_MASCOT_URL = "..."; 
+// --- MASCOT URL'LERİ (Sizin teyit ettiğiniz çalışan adresler) ---
+// Lütfen bu URL'lerin sunucunuzda (skyl.online/images) erişilebilir olduğundan emin olun.
+const AIRDROP_MASCOT_URL = "https://skyl.online/images/Skyhawk_Airdrop.png";
+const BUY_SELL_MASCOT_URL = "https://skyl.online/images/Skyhawk_Buy.png"; 
+// ---------------------------------------------------------------
 
 let bot;
 
@@ -27,10 +29,11 @@ if (!TOKEN || !CHAT_ID) {
 }
 
 /**
- * BÖLÜM 1: Airdrop Claim Bildirimi (SADECE METİN)
+ * BÖLÜM 1: Airdrop Claim Bildirimi (GÖRSEL VE METİN)
  */
 export const sendAirdropClaim = async ({ wallet, amount }) => {
     if (!bot) return;
+
     const formattedAmount = Number(amount).toLocaleString('en-US');
     const caption = `
         <b>🎁 NEW AIRDROP CLAIM 🎁</b>
@@ -39,32 +42,34 @@ export const sendAirdropClaim = async ({ wallet, amount }) => {
         👤 <b>Wallet:</b> <code>${wallet}</code>
         🔗 <b>BSCScan:</b> <a href="https://bscscan.com/address/${wallet}">View Address</a>
     `;
+    
     try {
-        // Fotoğraf yerine sadece metin (HTML) gönderiliyor
-        await bot.sendMessage(CHAT_ID, caption, { parse_mode: "HTML" });
-        console.log("[bot.js] ✅ Telegram (Airdrop) TEXT notification sent.");
+        await bot.sendPhoto(CHAT_ID, AIRDROP_MASCOT_URL, {
+            caption: caption,
+            parse_mode: "HTML",
+        });
+        console.log("[bot.js] ✅ Telegram (Airdrop) notification sent.");
     } catch (error) {
-        console.error("[bot.js] ❌ Telegram'a Airdrop TEXT gönderirken hata:", error.message);
+        console.error("[bot.js] ❌ Telegram'a Airdrop fotoğrafı gönderirken hata:", error.message);
     }
 };
 
 /**
- * BÖLÜM 2: Alım/Satım Bildirimi (SADECE METİN)
- * Bu, son alımınızın mesajını göndermeyi deneyecektir.
+ * BÖLÜM 2: Alım/Satım Bildirimi (GÖRSEL VE METİN)
  */
 export const sendBuyDetected = async (message, txHash) => {
   if (!bot) return; 
 
-  // Final metin (metin İngilizce olmalıdır)
+  // Mesaja TxHash linkini ekle (message zaten İngilizce, HTML formatındadır)
   const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">View Transaction on BscScan</a>`;
 
   try {
-    // Fotoğraf yerine sadece metin (HTML) gönderiyoruz
-    await bot.sendMessage(CHAT_ID, finalCaption, {
+    await bot.sendPhoto(CHAT_ID, BUY_SELL_MASCOT_URL, {
+      caption: finalCaption,
       parse_mode: "HTML",
     });
-    console.log("[bot.js] ✅ Telegram (Buy/Sell) TEXT notification sent.");
+    console.log("[bot.js] ✅ Telegram (Buy/Sell) notification sent.");
   } catch (error) {
-    console.error(`[bot.js] ❌ HATA: TEXT bildirim gönderilemedi. Hata: ${error.message}`);
+    console.error(`[bot.js] ❌ HATA: Buy/Sell fotoğrafı gönderilemedi. Hata: ${error.message}`);
   }
 };
