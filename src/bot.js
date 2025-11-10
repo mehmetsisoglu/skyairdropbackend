@@ -1,6 +1,6 @@
 /* ==============================================
-   Skyline Logic - Telegram Bildirim Motoru v2
-   (Fotoğraf gönderme özelliği eklendi)
+   Skyline Logic - Telegram Bildirim Motoru v2.1
+   (Düzeltilmiş URL'ler)
    ============================================== */
 
 import TelegramBot from "node-telegram-bot-api";
@@ -9,10 +9,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID; // Bu değişken adını doğrulamıştık
+const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID; 
 
-// --- MASCOT URL'LERİ (Lütfen bunları kendi URL'lerinizle değiştirin) ---
-// Not: Bu URL'ler, resimlerinizi yüklediğiniz yerin tam adresi olmalıdır.
+// --- MASCOT URL'LERİ (ÇALIŞAN ADRESLERLE GÜNCELLENDİ) ---
 const AIRDROP_MASCOT_URL = "https://skyl.online/images/Skyhawk_Airdrop.png";
 const BUY_SELL_MASCOT_URL = "https://skyl.online/images/Skyhawk_Buy.png";
 // -----------------------------------------------------------------
@@ -30,13 +29,11 @@ if (!TOKEN || !CHAT_ID) {
 
 /**
  * BÖLÜM 1: Airdrop Claim Bildirimi (Fotoğraflı)
- * server.js tarafından çağrılır
  */
 export const sendAirdropClaim = async ({ wallet, amount }) => {
-  if (!bot) return; // Bot başlatılamadıysa çık
+  if (!bot) return; 
 
   const formattedAmount = Number(amount).toLocaleString('en-US');
-  // Not: Markdown v2 formatı özel karakterlerde hata verebilir, HTML daha güvenlidir.
   const caption = `
 <b>🎁 YENİ AIRDROP CLAIM! 🎁</b>
 
@@ -60,15 +57,17 @@ Bir kullanıcı airdrop'unu başarıyla talep etti!
 
 /**
  * BÖLÜM 2: Alım/Satım Bildirimi (Fotoğraflı)
- * buy-bot.js tarafından çağrılır (Bu fonksiyon eksikti)
  */
-export const sendBuyDetected = async (message) => {
-  if (!bot) return; // Bot başlatılamadıysa çık
+export const sendBuyDetected = async (message, txHash) => {
+  if (!bot) return; 
+
+  // Mesaja TxHash linkini ekle
+  const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">İşlemi Gör (BscScan)</a>`;
 
   try {
     await bot.sendPhoto(CHAT_ID, BUY_SELL_MASCOT_URL, {
-      caption: message,
-      parse_mode: "HTML", // buy-bot.js HTML formatında gönderecek şekilde ayarlandı
+      caption: finalCaption,
+      parse_mode: "HTML",
     });
     console.log("[bot.js] ✅ Telegram (Buy/Sell) bildirimi gönderildi.");
   } catch (error) {
