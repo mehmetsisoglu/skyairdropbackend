@@ -6,7 +6,7 @@
   <title>Skyline Logic Airdrop</title>
   <link rel="icon" type="image/x-icon" href="img/skylinelogic_ico.ico" />
   
-  <link rel="stylesheet" href="style.css?v=840" />
+  <link rel="stylesheet" href="style.css?v=841" />
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.6.0/ethers.umd.min.js"></script>
 </head>
@@ -71,35 +71,46 @@
           <p>Follow X & Retweet Post</p>
           <small>+50 Points</small>
         </div>
-        
         <button class="btn" id="verify-x" style="display: none;">Verify</button> 
-        
         <div id="x-input-area" style="width: 100%; margin-top: 10px; text-align: left; padding-left: 60px; box-sizing: border-box;">
           <p style="font-size: 0.9rem; color: var(--c-text-subtle); margin-bottom: 8px;">
             Enter your X (Twitter) username (without @):
           </p>
           <input type="text" id="x-username-input" placeholder="YourUsername" style="width: calc(60% - 10px); padding: 8px; border-radius: 4px; border: 1px solid var(--c-container-border); background: #fff; color: #000;">
-          
           <button id="submit-x-username" class="btn" style="width: 35%; margin-left: 10px; padding: 8px 10px; font-size: 0.9rem;">Submit</button>
         </div>
       </div>
       
-      <div class="task">
+      <div class="task" style="flex-wrap: wrap;">
         <img src="img/telegram_3d.png" alt="telegram" />
         <div class="task-description">
           <p>Join our Telegram channel</p>
           <small>+10 Points</small>
         </div>
-        <button class="btn" id="verify-telegram">Join</button>
+        <button class="btn" id="verify-telegram" style="display: none;">Join</button>
+        <div id="telegram-input-area" style="width: 100%; margin-top: 10px; text-align: left; padding-left: 60px; box-sizing: border-box;">
+          <p style="font-size: 0.9rem; color: var(--c-text-subtle); margin-bottom: 8px;">
+            Enter your Telegram username (without @):
+          </p>
+          <input type="text" id="telegram-username-input" placeholder="YourUsername" style="width: calc(60% - 10px); padding: 8px; border-radius: 4px; border: 1px solid var(--c-container-border); background: #fff; color: #000;">
+          <button id="submit-telegram-username" class="btn" style="width: 35%; margin-left: 10px; padding: 8px 10px; font-size: 0.9rem;">Submit</button>
+        </div>
       </div>
       
-      <div class="task">
+      <div class="task" style="flex-wrap: wrap;">
         <img src="img/instagram_3d.png" alt="instagram" />
         <div class="task-description">
           <p>Follow our Instagram</p>
           <small>+10 Points</small>
         </div>
-        <button class="btn" id="verify-instagram">Follow</button>
+        <button class="btn" id="verify-instagram" style="display: none;">Follow</button>
+        <div id="instagram-input-area" style="width: 100%; margin-top: 10px; text-align: left; padding-left: 60px; box-sizing: border-box;">
+          <p style="font-size: 0.9rem; color: var(--c-text-subtle); margin-bottom: 8px;">
+            Enter your Instagram username (without @):
+          </p>
+          <input type="text" id="instagram-username-input" placeholder="YourUsername" style="width: calc(60% - 10px); padding: 8px; border-radius: 4px; border: 1px solid var(--c-container-border); background: #fff; color: #000;">
+          <button id="submit-instagram-username" class="btn" style="width: 35%; margin-left: 10px; padding: 8px 10px; font-size: 0.9rem;">Submit</button>
+        </div>
       </div>
     </section>
 
@@ -155,6 +166,6 @@
     </div>
   </div>
 
-  <script src="main.js?v=840"></script>
+  <script src="main.js?v=841"></script>
 </body>
 </html>
