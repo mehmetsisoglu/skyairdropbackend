@@ -1,59 +1,75 @@
-// Skyline Logic Telegram Bot Bildiricisi
+/* ==============================================
+   Skyline Logic - Telegram Bildirim Motoru v2
+   (Fotoğraf gönderme özelliği eklendi)
+   ============================================== */
+
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// Gizli anahtarları .env'den (veya Render Ortam Değişkenlerinden) oku
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN; // Bu satırı da eklemeyi unutmayın
-const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID;
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID; // Bu değişken adını doğruladık
+
+// --- MASCOT URL'LERİ (Lütfen bunları kendi URL'lerinizle değiştirin) ---
+const AIRDROP_MASCOT_URL = "https://skyl.online/img/mascot-airdrop.png";
+const BUY_SELL_MASCOT_URL = "https://skyl.online/img/mascot-buy.png";
+// -----------------------------------------------------------------
 
 let bot;
 
-// Sadece token ve chat ID varsa bot'u başlat
 if (!TOKEN || !CHAT_ID) {
   console.warn(
-    "⚠️ UYARI: TELEGRAM_BOT_TOKEN veya TELEGRAM_CHAT_ID ortam değişkenleri ayarlanmamış. Telegram bildirimleri devre dışı."
+    "⚠️ UYARI: TELEGRAM_BOT_TOKEN veya TELEGRAM_CHANNEL_ID ayarlanmamış. Telegram bildirimleri devre dışı."
   );
 } else {
-  // 'polling: false' olarak ayarlandı, çünkü bot sadece mesaj göndermek için kullanılacak,
-  // kullanıcılardan mesaj almak için değil.
   bot = new TelegramBot(TOKEN, { polling: false });
   console.log("✅ Telegram botu bildirimler için hazır.");
 }
 
 /**
- * Bir airdrop claim işlemi başarılı olduğunda Telegram'a bildirim gönderir.
- * @param {object} options - Claim detayları
- * @param {string} options.wallet - Claim yapanın cüzdan adresi
- * @param {string} options.amount - Claim edilen miktar
+ * BÖLÜM 1: Airdrop Claim Bildirimi (Fotoğraflı)
+ * server.js tarafından çağrılır
  */
 export const sendAirdropClaim = async ({ wallet, amount }) => {
-  // Bot başlatılamadıysa (TOKEN eksikse) fonksiyondan çık
-  if (!bot) {
-    console.warn(
-      "Telegram botu başlatılmadığı için /notify-claim mesajı gönderilemedi."
-    );
-    return;
-  }
+  if (!bot) return; // Bot başlatılamadıysa çık
 
-  // Telegram'a gönderilecek düz metin mesajı
-  // (Markdown kullanmak karakter hatalarına neden olabilir, düz metin en güvenlisidir)
-  const message = `
-🎉 YENİ AIRDROP CLAIM! 🎉
+  const formattedAmount = Number(amount).toLocaleString('en-US');
+  const caption = `
+🎁 **YENİ AIRDROP CLAIM!** 🎁
 
-Bir kullanıcı airdrop'unu başarıyla claim etti!
+Bir kullanıcı airdrop'unu başarıyla talep etti!
 
-💰 Miktar: ${amount} $SKYL
-👤 Cüzdan: ${wallet}
-🔗 BSCScan: https://bscscan.com/address/${wallet}
-`;
+💰 **Miktar:** ${formattedAmount} $SKYL
+👤 **Cüzdan:** \`${wallet}\`
+🔗 **BSCScan:** [Adresi Görüntüle](https://bscscan.com/address/${wallet})
+  `;
 
   try {
-    // Mesajı belirtilen sohbet ID'sine (kanal/grup) gönder
-    await bot.sendMessage(CHAT_ID, message);
-    console.log("✅ Telegram claim bildirimi başarıyla gönderildi.");
+    await bot.sendPhoto(CHAT_ID, AIRDROP_MASCOT_URL, {
+      caption: caption,
+      parse_mode: "Markdown",
+    });
+    console.log("✅ Telegram (Airdrop) bildirimi gönderildi.");
   } catch (error) {
-    console.error("❌ Telegram'a mesaj gönderirken hata:", error.message);
+    console.error("❌ Telegram'a Airdrop fotoğrafı gönderirken hata:", error.message);
+  }
+};
+
+/**
+ * BÖLÜM 2: Alım/Satım Bildirimi (Fotoğraflı)
+ * buy-bot.js tarafından çağrılır (Bu fonksiyon eksikti)
+ */
+export const sendBuyDetected = async (message) => {
+  if (!bot) return; // Bot başlatılamadıysa çık
+
+  try {
+    await bot.sendPhoto(CHAT_ID, BUY_SELL_MASCOT_URL, {
+      caption: message,
+      parse_mode: "Markdown",
+    });
+    console.log("✅ Telegram (Buy/Sell) bildirimi gönderildi.");
+  } catch (error) {
+    console.error("❌ Telegram'a Alım/Satım fotoğrafı gönderirken hata:", error.message);
   }
 };
