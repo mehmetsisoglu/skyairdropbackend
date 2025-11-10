@@ -51,19 +51,31 @@ export const sendAirdropClaim = async ({ wallet, amount }) => { // <-- EXPORT BU
 
 /**
  * BÖLÜM 2: Alım/Satım Bildirimi (SADECE METİN)
- * Bu fonksiyon zaten export ediliyordu, ama tutarlılık için tekrar yazıldı.
+* Görüntü yükleme sorunlarını atlatmak için sadece metin ve URL gönderilir.
  */
 export const sendBuyDetected = async (message, txHash) => {
   if (!bot) return; 
 
+  const BUY_SELL_MASCOT_URL = "https://skyl.online/images/Skyhawk_Buy.png"; // Çalışan URL'iniz
+  
+  // Mesaja TxHash linkini ekle
   const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">View Transaction on BscScan</a>`;
 
   try {
+    // Önce görselin URL'sini metin olarak gönderiyoruz. 
+    // Telegram, bu URL'yi otomatik olarak bir resim olarak önizleyecektir.
+    await bot.sendMessage(CHAT_ID, BUY_SELL_MASCOT_URL, {
+        disable_notification: true, // Kullanıcıları rahatsız etmemek için sessiz gönder
+        disable_web_page_preview: false, // Önizlemeyi aç
+    });
+    
+    // Ardından asıl metin mesajını gönderiyoruz
     await bot.sendMessage(CHAT_ID, finalCaption, {
       parse_mode: "HTML",
     });
-    console.log("[bot.js] ✅ Telegram (Buy/Sell) TEXT notification sent.");
+    
+    console.log("[bot.js] ✅ Telegram (Buy/Sell) METİN & URL Bildirim sent.");
   } catch (error) {
-    console.error(`[bot.js] ❌ HATA: TEXT bildirim gönderilemedi. Hata: ${error.message}`);
+    console.error(`[bot.js] ❌ HATA: Final Telegram Bildirimi gönderilemedi. Hata: ${error.message}`);
   }
 };
