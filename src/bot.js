@@ -1,5 +1,5 @@
 /* ==============================================
-   Skyline Logic - Telegram Bildirim Motoru v6.3 (STABİL, POLLING KAPALI)
+   Skyline Logic - Telegram Bildirim Motoru v7.0 (FINAL STABLE TEXT)
    ============================================== */
 
 import TelegramBot from "node-telegram-bot-api";
@@ -10,26 +10,22 @@ dotenv.config();
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID; 
 
-// Not: Polling kapalı olduğu için görsel gönderme denenmeyecektir, sadece metin gönderilir.
-// const AIRDROP_MASCOT_URL = "https://skyl.online/images/Skyhawk_Airdrop.png"; 
-// const BUY_SELL_MASCOT_URL = "https://skyl.online/images/Skyhawk_Buy.png"; 
-
 let bot;
 
 if (!TOKEN || !CHAT_ID) {
   console.warn(
-    "[bot.js] ⚠️ UYARI: TELEGRAM_BOT_TOKEN veya TELEGRAM_CHANNEL_ID ayarlanmamış. Bildirimler devre dışı."
+    "[bot.js] ⚠️ WARNING: TELEGRAM_BOT_TOKEN or CHANNEL_ID not set. Notifications disabled."
   );
 } else {
-  // CRITICAL FIX: Sadece pasif mesaj göndermek için başlat. Polling kapalı.
-  // Bu, 409 Conflict hatasını çözer.
+  // CRITICAL FIX: Botu sadece mesaj göndermek için başlat. 
+  // Polling kapalı olduğu için 409 Conflict hatası çözülür.
   bot = new TelegramBot(TOKEN, { polling: false }); 
-  console.log("[bot.js] ✅ Telegram botu bildirimler için hazır.");
+  console.log("[bot.js] ✅ Telegram bot is running (Passive Mode).");
 }
 
 /**
  * BÖLÜM 1: Airdrop Claim Bildirimi (SADECE METİN)
- * Bu fonksiyon, server.js tarafından çağrılır.
+ * server.js tarafından çağrılır.
  */
 export const sendAirdropClaim = async ({ wallet, amount }) => { 
     if (!bot) return;
@@ -43,6 +39,7 @@ export const sendAirdropClaim = async ({ wallet, amount }) => {
         🔗 <b>BSCScan:</b> <a href="https://bscscan.com/address/${wallet}">View Address</a>
     `;
     try {
+        // Metin mesajı gönderiliyor
         await bot.sendMessage(CHAT_ID, caption, { parse_mode: "HTML" });
         console.log("[bot.js] ✅ Telegram (Airdrop) TEXT notification sent.");
     } catch (error) {
@@ -52,7 +49,7 @@ export const sendAirdropClaim = async ({ wallet, amount }) => {
 
 /**
  * BÖLÜM 2: Alım/Satım Bildirimi (SADECE METİN)
- * Bu fonksiyon, buy-bot.js tarafından çağrılır.
+ * buy-bot.js tarafından çağrılır.
  */
 export const sendBuyDetected = async (message, txHash) => {
   if (!bot) return; 
@@ -61,6 +58,7 @@ export const sendBuyDetected = async (message, txHash) => {
   const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">View Transaction on BscScan</a>`;
 
   try {
+    // Metin mesajı gönderiliyor
     await bot.sendMessage(CHAT_ID, finalCaption, {
       parse_mode: "HTML",
     });
