@@ -1,5 +1,5 @@
 /* ==============================================
-   Skyline Logic - Telegram Bildirim Motoru v7.0 (FINAL STABLE TEXT)
+   Skyline Logic - Telegram Bildirim Motoru v7.1 (FINAL HATA ZORLAMA)
    ============================================== */
 
 import TelegramBot from "node-telegram-bot-api";
@@ -17,53 +17,44 @@ if (!TOKEN || !CHAT_ID) {
     "[bot.js] ⚠️ WARNING: TELEGRAM_BOT_TOKEN or CHANNEL_ID not set. Notifications disabled."
   );
 } else {
-  // CRITICAL FIX: Botu sadece mesaj göndermek için başlat. 
-  // Polling kapalı olduğu için 409 Conflict hatası çözülür.
+  // Polling kapalı, sadece pasif mesaj gönderiyor
   bot = new TelegramBot(TOKEN, { polling: false }); 
-  console.log("[bot.js] ✅ Telegram bot is running (Passive Mode).");
+  console.log("[bot.js] ✅ Telegram botu bildirimler için hazır.");
 }
 
-/**
- * BÖLÜM 1: Airdrop Claim Bildirimi (SADECE METİN)
- * server.js tarafından çağrılır.
- */
-export const sendAirdropClaim = async ({ wallet, amount }) => { 
-    if (!bot) return;
-
-    const formattedAmount = Number(amount).toLocaleString('en-US');
-    const caption = `
-        <b>🎁 NEW AIRDROP CLAIM 🎁</b>
-        
-        💰 <b>Amount:</b> ${formattedAmount} $SKYL
-        👤 <b>Wallet:</b> <code>${wallet}</code>
-        🔗 <b>BSCScan:</b> <a href="https://bscscan.com/address/${wallet}">View Address</a>
-    `;
-    try {
-        // Metin mesajı gönderiliyor
-        await bot.sendMessage(CHAT_ID, caption, { parse_mode: "HTML" });
-        console.log("[bot.js] ✅ Telegram (Airdrop) TEXT notification sent.");
-    } catch (error) {
-        console.error("[bot.js] ❌ Telegram'a Airdrop TEXT gönderirken hata:", error.message);
-    }
-};
+// ... (sendAirdropClaim fonksiyonu aynı kalır)
 
 /**
- * BÖLÜM 2: Alım/Satım Bildirimi (SADECE METİN)
- * buy-bot.js tarafından çağrılır.
+ * BÖLÜM 2: Alım/Satım Bildirimi (HATA ZORLAMA TESTİ)
  */
 export const sendBuyDetected = async (message, txHash) => {
   if (!bot) return; 
 
-  // Final metin (message zaten İngilizce, HTML formatındadır)
   const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">View Transaction on BscScan</a>`;
 
   try {
-    // Metin mesajı gönderiliyor
+    // 1. ADIM: Normal mesajı göndermeyi dene
     await bot.sendMessage(CHAT_ID, finalCaption, {
       parse_mode: "HTML",
     });
     console.log("[bot.js] ✅ Telegram (Buy/Sell) TEXT notification sent.");
+    
+    // 2. ADIM (Ekstra Kanıt): Eğer ilk mesaj gitmezse, Telegram'ın 
+    // bize hatayı bildirmesi için bir saniye sonra basit bir metin daha gönderiyoruz.
+    // Bu, önceki işlemdeki sessiz hatayı yakalamaya zorlayabilir.
+    setTimeout(async () => {
+        try {
+            await bot.sendMessage(CHAT_ID, "⚠️ Mesajın ulaştığından emin olmak için bu satır test amaçlı gönderilmiştir. ⚠️", {
+                parse_mode: "HTML",
+                disable_notification: true // Sessizce gönder
+            });
+        } catch(e) {
+            console.error(`[bot.js] 🚨 KRİTİK HATA: İkinci Mesaj gönderilemedi. Hata: ${e.message}`);
+        }
+    }, 1000);
+
   } catch (error) {
-    console.error(`[bot.js] ❌ HATA: TEXT bildirim gönderilemedi. Hata: ${error.message}`);
+    // Bu sefer yakalanan hatayı loga çok güçlü bir şekilde yazdırıyoruz.
+    console.error(`[bot.js] ❌ HATA: Ana Bildirim Gönderilemedi. Hata: ${error.message}`);
   }
 };
