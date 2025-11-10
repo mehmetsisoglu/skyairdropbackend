@@ -1,5 +1,5 @@
 /* ==========================
-   Skyline Logic Airdrop v1.3 (All Tasks Use Input)
+   Skyline Logic Airdrop v1.4 (Stable Mobile Flow)
    ========================== */
 
 // ---------- Config ----------
@@ -8,7 +8,7 @@ const DEV_MODE = false;
 // Backend (Render)
 const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com";
 
-// X Tweet ID
+// X Tweet ID (GÜNCELLENDİ - Gerçek ID'niz)
 const AIRDROP_TWEET_ID = "1983278116723392817";
 
 // Social links + intents
@@ -484,7 +484,7 @@ document.addEventListener("DOMContentLoaded",() => {
 
   $("#closePopup")?.addEventListener("click",()=>{ $("#claimSuccessPopup").style.display="none"; });
 
-  // === TÜM "SUBMIT" BUTONLARI İÇİN DİNLEYİCİLER ===
+  // === TÜM "SUBMIT" BUTONLARI İÇİN DİNLEYİCİLER (GÜNCELLENDİ) ===
   
   // X (Twitter) Submit
   $("#submit-x-username")?.addEventListener("click", () => {
@@ -493,36 +493,31 @@ document.addEventListener("DOMContentLoaded",() => {
       showBanner("Please enter your X username", "red");
       return;
     }
-    window.open(SOCIAL_URLS.xFollowIntent,'_blank');
-    window.open(SOCIAL_URLS.xRetweetIntent,'_blank');
-    window.open(SOCIAL_URLS.x,'_blank');
+    // window.open komutları BURADAN KALDIRILDI
     verifyTask("x", username.trim()); 
   });
   
-  // Telegram Submit (YENİ EKLENDİ)
+  // Telegram Submit (GÜNCELLENDİ)
   $("#submit-telegram-username")?.addEventListener("click",() => {
     const username = $("#telegram-username-input")?.value;
     if (!username || username.trim() === "") {
       showBanner("Please enter your Telegram username", "red");
       return;
     }
-    try { window.open(SOCIAL_URLS.telegramDeep,'_blank'); } catch {}
-    window.open(SOCIAL_URLS.telegram,'_blank');
+    // window.open komutları BURADAN KALDIRILDI
     verifyTask("telegram", username.trim());
   });
 
-  // Instagram Submit (YENİ EKLENDİ)
+  // Instagram Submit (GÜNCELLENDİ)
   $("#submit-instagram-username")?.addEventListener("click",() => {
     const username = $("#instagram-username-input")?.value;
     if (!username || username.trim() === "") {
       showBanner("Please enter your Instagram username", "red");
       return;
     }
-    window.open(SOCIAL_URLS.instagram,'_blank');
+    // window.open komutları BURADAN KALDIRILDI
     verifyTask("instagram", username.trim());
   });
-
-  // Eski (ve artık gizli) butonların dinleyicileri kaldırıldı
 
   window.startCountdown();
 
