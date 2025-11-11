@@ -1,65 +1,87 @@
 /* ==============================================
-   Skyline Logic - Telegram Bildirim Motoru v7.3 (EXPORT HATA DÜZELTİLDİ)
+   Skyline Logic ($SKYL) - PancakeSwap "Buy Bot" v7.5 (EXPORT DÜZELTİLDİ)
    ============================================== */
 
-import TelegramBot from "node-telegram-bot-api";
+import { ethers } from "ethers";
 import dotenv from "dotenv";
+import { sendBuyDetected } from "./bot.js"; 
 
 dotenv.config();
 
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID; 
+// --- Kontrat Adresleri ve ABI'lar ---
+const WSS_URL = process.env.BSC_WSS_URL; 
+const PAIR_ADDRESS = process.env.PANCAKESWAP_PAIR_ADDRESS; 
+const SKYL_ADDRESS = "0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c";
+const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"; 
 
-let bot;
+const PAIR_ABI = [
+  "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)",
+  "function token0() external view returns (address)",
+  "function token1() external view returns (address)"
+];
 
-if (!TOKEN || !CHAT_ID) {
-  console.warn(
-    "[bot.js] ⚠️ WARNING: TELEGRAM_BOT_TOKEN or CHANNEL_ID not set. Notifications disabled."
-  );
-} else {
-  // Polling kapalı olduğu için 409 Conflict hatası çözülür.
-  bot = new TelegramBot(TOKEN, { polling: false }); 
-  console.log("[bot.js] ✅ Telegram botu bildirimler için hazır.");
+const TOKEN_ABI = [
+  "function decimals() external view returns (uint8)",
+  "function symbol() external view returns (string)"
+];
+
+// --- GÜVENLİK FİLTRESİ ---
+const sanitizeHTML = (input = "") =>
+  input
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/&/g, "&amp;");
+// ----------------------------
+
+// --- Yardımcı Fonksiyonlar ---
+function formatBigInt(amount, decimals) {
+  return parseFloat(ethers.formatUnits(amount, decimals)).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4
+  });
 }
 
-/**
- * BÖLÜM 1: Airdrop Claim Bildirimi (SADECE METİN)
- * **EXPORT BURADA**
- */
-export const sendAirdropClaim = async ({ wallet, amount }) => { 
-    if (!bot) return;
+// === Ana Bot Mantığı ===
+async function startBot() {
+  console.log("[buy-bot.js] 🤖 Skyline Logic Buy Bot başlatılıyor...");
 
-    const formattedAmount = Number(amount).toLocaleString('en-US');
-    const caption = `
-        <b>🎁 NEW AIRDROP CLAIM 🎁</b>
-        
-        💰 <b>Amount:</b> ${formattedAmount} $SKYL
-        👤 <b>Wallet:</b> <code>${wallet}</code>
-        🔗 <b>BSCScan:</b> <a href="https://bscscan.com/address/${wallet}">View Address</a>
-    `;
+  // ... (Bot başlatma ve bağlantı kodları aynı kalır)
+
+  // "Swap" (Takas) olayını dinlemeye başla
+  pairContract.on("Swap", async (sender, amount0In, amount1In, amount0Out, amount1Out, to, event) => {
     try {
-        await bot.sendMessage(CHAT_ID, caption, { parse_mode: "HTML" });
-        console.log("[bot.js] ✅ Telegram (Airdrop) TEXT notification sent.");
-    } catch (error) {
-        console.error("[bot.js] ❌ Telegram'a Airdrop TEXT gönderirken hata:", error.message);
+      let bnbAmount, skylAmount, message, txHash;
+      
+      // ... (Hesaplama kodları aynı kalır)
+      
+      // Biri $SKYL ALDIĞINDA
+      if (bnbAmountIn > 0n && skylAmountOut > 0n) {
+        // ... (Mesaj içeriği aynı kalır)
+      }
+      // Biri $SKYL SATTIĞINDA
+      else if (skylAmountIn > 0n && bnbAmountOut > 0n) {
+        // ... (Mesaj içeriği aynı kalır)
+      }
+
+      // Mesaj varsa Telegram'a gönder
+      if (message) {
+        await sendBuyDetected(message, txHash);
+      }
+    
+    } catch (e) {
+      console.error(`[buy-bot.js] Swap olayı işlenirken kritik hata: ${e.message}`);
     }
-};
+  });
 
-/**
- * BÖLÜM 2: Alım/Satım Bildirimi (SADECE METİN)
- * **EXPORT BURADA**
- */
-export const sendBuyDetected = async (message, txHash) => {
-  if (!bot) return; 
+  // Bağlantı hatalarını yakala ve yeniden bağlanmayı dene
+  provider.on('error', (err) => {
+    console.error(`[buy-bot.js] WebSocket Bağlantı Hatası: ${err.message}`);
+    console.log('[buy-bot.js] 5 saniye içinde yeniden bağlanmaya çalışılıyor...');
+    setTimeout(startBot, 5000); 
+  });
 
-  const finalCaption = `${message}\n\n🔗 <a href="https://bscscan.com/tx/${txHash}">View Transaction on BscScan</a>`;
+  console.log("[buy-bot.js] ✅ Bot, PancakeSwap 'Swap' olaylarını dinlemeye başladı.");
+}
 
-  try {
-    await bot.sendMessage(CHAT_ID, finalCaption, {
-      parse_mode: "HTML",
-    });
-    console.log("[bot.js] ✅ Telegram (Buy/Sell) TEXT notification sent.");
-  } catch (error) {
-    console.error(`[bot.js] ❌ HATA: TEXT bildirim gönderilemedi. Hata: ${error.message}`);
-  }
-};
+// Botu başlat
+startBot();
