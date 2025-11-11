@@ -1,4 +1,4 @@
-// src/buy-bot.js (v5.2 – ALCHEMY WSS + STABLE)
+// src/buy-bot.js (v6.0 – SKYHAWK FORMAT)
 import { ethers } from "ethers";
 import dotenv from "dotenv";
 import { sendBuyDetected } from "./bot.js";
@@ -19,38 +19,36 @@ const ABI = [
 
 let provider, pair;
 let retries = 0;
-const MAX_RETRIES = 3;
+const MAX = 3;
 
 const start = () => {
-  console.log("[buy-bot.js] Alchemy WSS ile bağlanıyor...");
+  console.log("[buy-bot.js] Alchemy ile bağlanıyor...");
   provider = new ethers.WebSocketProvider(WSS);
-
   pair = new ethers.Contract(PAIR, ABI, provider);
 
-  pair.on("Swap", async (sender, amount0In, amount1In, amount0Out, amount1Out, to, event) => {
-    const txHash = event.log.transactionHash;
+  pair.on("Swap", async (sender, a0In, a1In, a0Out, a1Out, to, ev) => {
+    const tx = ev.log.transactionHash;
 
-    // SKYL = token0, WBNB = token1 (senin pair)
-    if (amount1In > 0n && amount0Out > 0n) {
-      const skyl = ethers.formatUnits(amount0Out, 18);
-      const cost = ethers.formatUnits(amount1In, 18);
-      const msg = `BUY DETECTED!\n\n<b>Amount:</b> ${parseFloat(skyl).toFixed(0)} $SKYL\n<b>Cost:</b> ${parseFloat(cost).toFixed(6)} WBNB\n<b>Wallet:</b> <code>${to.slice(0,6)}...${to.slice(-4)}</code>`;
-      await sendBuyDetected(msg, txHash);
+    // SKYL = token0, WBNB = token1
+    if (a1In > 0n && a0Out > 0n) {
+      const skyl = ethers.formatUnits(a0Out, 18);
+      const cost = ethers.formatUnits(a1In, 18);
+      await sendBuyDetected(skyl, cost, to, tx);
     }
   });
 
-  console.log("[buy-bot.js] Swap dinleme başladı!");
+  console.log("[buy-bot.js] SKYHAWK formatıyla dinleniyor!");
   retries = 0;
 };
 
 const reconnect = () => {
   provider?.destroy();
-  if (retries >= MAX_RETRIES) {
-  console.error("[buy-bot.js] MAX RETRY – Bot durdu.");
+  if (retries >= MAX) {
+    console.error("[buy-bot.js] MAX RETRY – Çıkış.");
     process.exit(1);
   }
   retries++;
-  console.log(`[buy-bot.js] Yeniden bağlanma: ${retries}/${MAX_RETRIES} (3sn)`);
+  console.log(`[buy-bot.js] Yeniden bağlanma: ${retries}/${MAX}`);
   setTimeout(start, 3000);
 };
 

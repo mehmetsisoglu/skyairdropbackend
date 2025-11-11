@@ -1,85 +1,85 @@
-/* src/bot.js */
+// src/bot.js (v9.0 – SKYHAWK + YENİ FORMAT)
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim();
-const RAW_CHAT_ID = process.env.TELEGRAM_CHANNEL_ID?.trim();
+const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID?.trim();
 
 let bot = null;
 
-const getChatId = () => {
-  if (!RAW_CHAT_ID) return null;
-  if (RAW_CHAT_ID.startsWith("@") || RAW_CHAT_ID.startsWith("-100")) return RAW_CHAT_ID;
-  const num = Number(RAW_CHAT_ID);
-  return isNaN(num) ? null : num;
-};
-
-const CHAT_ID = getChatId();
-
 if (!TOKEN || !CHAT_ID) {
-  console.warn("[bot.js] ⚠️ Bot token veya kanal ID eksik. Bildirimler kapalı.");
+  console.warn("[bot.js] Token veya kanal ID eksik.");
 } else {
-  try {
-    bot = new TelegramBot(TOKEN, { polling: false });
-    console.log("[bot.js] ✅ Telegram botu hazır.");
-  } catch (err) {
-    console.error("[bot.js] Bot başlatılamadı:", err.message);
-  }
+  bot = new TelegramBot(TOKEN, { polling: false });
+  console.log("[bot.js] Bot hazır.");
 }
 
-const escapeHTML = (str) =>
-  String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+const escape = (str) => String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// === EXPORT: Airdrop ===
-export const sendAirdropClaim = async ({ wallet, amount } = {}) => {
+// === BUY DETECTED ===
+export const sendBuyDetected = async (amountSKYL, costWBNB, wallet, txHash) => {
   if (!bot || !CHAT_ID) return;
 
-  const num = parseFloat(amount);
-  const formatted = isNaN(num) ? "0" : num.toLocaleString("en-US");
-  const safeWallet = escapeHTML(wallet || "unknown");
+  const shortWallet = wallet.slice(0, 6) + "..." + wallet.slice(-4);
+  const amount = parseFloat(amountSKYL).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const cost = parseFloat(costWBNB).toFixed(6);
 
   const text = `
-<b>NEW AIRDROP CLAIM</b>
+$SKYL Buy Detected!
 
-<b>Amount:</b> ${formatted} $SKYL
-<b>Wallet:</b> <code>${safeWallet}</code>
-<b>BSCScan:</b> <a href="https://bscscan.com/address/${safeWallet}">View</a>
+<b>Amount:</b> ${amount} $SKYL
+<b>Cost:</b> ${cost} WBNB
+<b>Wallet:</b> <code>${escape(shortWallet)}</code>
+
+<a href="https://bscscan.com/tx/${escape(txHash)}">View on BscScan</a>
   `.trim();
 
   try {
-    await bot.sendMessage(CHAT_ID, text, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
-    console.log("[bot.js] Airdrop bildirimi gönderildi.");
+    await bot.sendPhoto(
+      CHAT_ID,
+      "https://skyl.online/images/Skyhawk_Buy.png",
+      {
+        caption: text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }
+    );
+    console.log("[bot.js] BUY bildirimi + görsel gönderildi.");
   } catch (err) {
-    console.error("[bot.js] Airdrop hatası:", err.message);
+    console.error("[bot.js] BUY hatası:", err.message);
   }
 };
 
-// === EXPORT: Buy/Sell ===
-export const sendBuyDetected = async (message, txHash) => {
+// === AIRDROP CLAIM ===
+export const sendAirdropClaim = async ({ wallet, amount }) => {
   if (!bot || !CHAT_ID) return;
 
-  let text = message || "İşlem tespit edildi.";
+  const formatted = parseFloat(amount).toLocaleString("en-US");
+  const safeWallet = escape(wallet);
 
-  if (txHash && typeof txHash === "string" && txHash.trim()) {
-    const safeTx = escapeHTML(txHash.trim());
-    text += `\n\n<a href="https://bscscan.com/tx/${safeTx}">View on BscScan</a>`;
-  }
+  const text = `
+$SKYL Airdrop Claim!
+
+<b>Amount:</b> ${formatted} $SKYL
+<b>Wallet:</b> <code>${safeWallet}</code>
+
+<a href="https://bscscan.com/address/${safeWallet}">View on BscScan</a>
+  `.trim();
 
   try {
-    await bot.sendMessage(CHAT_ID, text.trim(), {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
-    console.log("[bot.js] Buy/Sell bildirimi gönderildi.");
+    await bot.sendPhoto(
+      CHAT_ID,
+      "https://skyl.online/images/Skyhawk_Airdrop.png",
+      {
+        caption: text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }
+    );
+    console.log("[bot.js] Airdrop bildirimi + görsel gönderildi.");
   } catch (err) {
-    console.error("[bot.js] Buy/Sell hatası:", err.message);
+    console.error("[bot.js] Airdrop hatası:", err.message);
   }
 };
