@@ -1,23 +1,22 @@
-// src/buy-bot.js (v7.0 – SADECE BUY DETECTED + SKYHAWK + ALCHEMY)
+// src/buy-bot.js (v8.0 – BUY DETECTED + X POST + SKYHAWK)
 import { ethers } from "ethers";
 import dotenv from "dotenv";
 import { sendBuyDetected } from "./bot.js";
-
-// === X OTOMASYONU (İSTEĞE BAĞLI) ===
-import { postToX } from "./x-poster.js"; // <-- Aktif etmek istersen uncomment
+import { postToX } from "./x-poster.js"; // X OTOMASYONU AKTİF
 
 dotenv.config();
 
 // === ÇEVRE DEĞİŞKENLERİ ===
 const WSS = process.env.BSC_WSS_URL;
 const PAIR = process.env.PANCAKESWAP_PAIR_ADDRESS;
+const X_BEARER = process.env.X_BEARER_TOKEN;
 
 if (!WSS || !PAIR) {
   console.error("[buy-bot.js] BSC_WSS_URL veya PANCAKESWAP_PAIR_ADDRESS eksik!");
   process.exit(1);
 }
 
-// === ABI (Sadece Swap event) ===
+// === ABI ===
 const ABI = [
   "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"
 ];
@@ -42,16 +41,24 @@ const start = () => {
       const skylAmount = ethers.formatUnits(amount0Out, 18);
       const wbnbCost = ethers.formatUnits(amount1In, 18);
 
-      // === TELEGRAM BİLDİRİMİ ===
-      await sendBuyDetected(skylAmount, wbnbCost, to, txHash);
+      // === 1. TELEGRAM BİLDİRİMİ ===
+      await sendBuyDetected(skylAmount, wbnbCost, to, txHash).catch(err =>
+        console.error("[buy-bot.js] Telegram hatası:", err.message)
+      );
 
-      // === X OTOMASYONU (İSTEĞE BAĞLI) ===
-      // await postToX(skylAmount, wbnbCost, to, txHash); // <-- Aktif etmek istersen uncomment
+      // === 2. X OTOMASYONU (AKTİF) ===
+      if (X_BEARER) {
+        await postToX(skylAmount, wbnbCost, to, txHash).catch(err =>
+          console.error("[buy-bot.js] X post hatası:", err.message)
+        );
+      } else {
+        console.warn("[buy-bot.js] X_BEARER_TOKEN eksik → X post atılmadı.");
+      }
     }
-    // SATIŞ: TAMAMEN YOK SAYILIYOR (FUD ÖNLEME)
+    // SATIŞ: YOK SAYILIYOR (FUD ÖNLEME)
   });
 
-  console.log("[buy-bot.js] SADECE BUY DETECTED aktif! Skyhawk uçuyor!");
+  console.log("[buy-bot.js] BUY DETECTED + X POST aktif! @SkylineLogicAI");
   retries = 0;
 };
 
@@ -68,7 +75,7 @@ const reconnect = () => {
   }
 
   retries++;
-  console.log(`[buy-bot.js] Yeniden bağlanma denemesi: ${retries}/${MAX_RETRIES} (3sn sonra)`);
+  console.log(`[buy-bot.js] Yeniden bağlanma: ${retries}/${MAX_RETRIES} (3sn)`);
   setTimeout(start, 3000);
 };
 

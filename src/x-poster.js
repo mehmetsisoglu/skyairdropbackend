@@ -1,7 +1,5 @@
-// src/x-poster.js (v7.0 – İZOLE, GÜVENLİ)
-import { sendBuyDetected } from "./bot.js";
+// src/x-poster.js (v8.0 – X OTOMASYONU)
 import dotenv from "dotenv";
-
 dotenv.config();
 
 const X_BEARER = process.env.X_BEARER_TOKEN;
@@ -9,11 +7,22 @@ const X_BEARER = process.env.X_BEARER_TOKEN;
 export const postToX = async (amount, cost, wallet, txHash) => {
   if (!X_BEARER) return;
 
-  const short = wallet.slice(0, 6) + "..." + wallet.slice(-4);
-  const text = `$SKYL Buy Detected!\n\n${amount} $SKYL\n${cost} WBNB\nWallet: ${short}\n\nhttps://bscscan.com/tx/${txHash}`;
+  const shortWallet = wallet.slice(0, 6) + "..." + wallet.slice(-4);
+  const amountStr = parseFloat(amount).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const costStr = parseFloat(cost).toFixed(6);
+
+  const text = `$SKYL Buy Detected!
+
+${amountStr} $SKYL
+${costStr} WBNB
+Wallet: ${shortWallet}
+
+https://bscscan.com/tx/${txHash}
+
+@SkylineLogicAI`;
 
   try {
-    await fetch("https://api.twitter.com/2/tweets", {
+    const res = await fetch("https://api.twitter.com/2/tweets", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${X_BEARER}`,
@@ -21,8 +30,14 @@ export const postToX = async (amount, cost, wallet, txHash) => {
       },
       body: JSON.stringify({ text })
     });
-    console.log("[x-poster.js] X'e post atıldı!");
+
+    if (res.ok) {
+      console.log("[x-poster.js] X'e post atıldı!");
+    } else {
+      const err = await res.text();
+      console.error("[x-poster.js] X API hatası:", err);
+    }
   } catch (e) {
-    console.error("[x-poster.js] X hatası:", e.message);
+    console.error("[x-poster.js] Bağlantı hatası:", e.message);
   }
 };
