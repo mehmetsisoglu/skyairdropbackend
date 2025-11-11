@@ -1,15 +1,16 @@
-// src/buy-bot.js (v8.0 – BUY DETECTED + X POST + SKYHAWK)
+// src/buy-bot.js (v8.1 – SADECE BUY DETECTED + X POST KAPALI)
 import { ethers } from "ethers";
 import dotenv from "dotenv";
 import { sendBuyDetected } from "./bot.js";
-import { postToX } from "./x-poster.js"; // X OTOMASYONU AKTİF
+
+// === X OTOMASYONU (ŞİMDİLİK KAPALI) ===
+// import { postToX } from "./x-poster.js"; // KAPALI – İleride açmak istersen uncomment
 
 dotenv.config();
 
 // === ÇEVRE DEĞİŞKENLERİ ===
 const WSS = process.env.BSC_WSS_URL;
 const PAIR = process.env.PANCAKESWAP_PAIR_ADDRESS;
-const X_BEARER = process.env.X_BEARER_TOKEN;
 
 if (!WSS || !PAIR) {
   console.error("[buy-bot.js] BSC_WSS_URL veya PANCAKESWAP_PAIR_ADDRESS eksik!");
@@ -41,24 +42,19 @@ const start = () => {
       const skylAmount = ethers.formatUnits(amount0Out, 18);
       const wbnbCost = ethers.formatUnits(amount1In, 18);
 
-      // === 1. TELEGRAM BİLDİRİMİ ===
+      // === TELEGRAM BİLDİRİMİ (AKTİF) ===
       await sendBuyDetected(skylAmount, wbnbCost, to, txHash).catch(err =>
         console.error("[buy-bot.js] Telegram hatası:", err.message)
       );
 
-      // === 2. X OTOMASYONU (AKTİF) ===
-      if (X_BEARER) {
-        await postToX(skylAmount, wbnbCost, to, txHash).catch(err =>
-          console.error("[buy-bot.js] X post hatası:", err.message)
-        );
-      } else {
-        console.warn("[buy-bot.js] X_BEARER_TOKEN eksik → X post atılmadı.");
-      }
+      // === X OTOMASYONU (KAPALI) ===
+      // await postToX(skylAmount, wbnbCost, to, txHash); // KAPALI
+      // console.log("[buy-bot.js] X post atılmadı – Otomasyon kapalı.");
     }
-    // SATIŞ: YOK SAYILIYOR (FUD ÖNLEME)
+    // SATIŞ: YOK SAYILIYOR
   });
 
-  console.log("[buy-bot.js] BUY DETECTED + X POST aktif! @SkylineLogicAI");
+  console.log("[buy-bot.js] SADECE BUY DETECTED aktif! X post KAPALI.");
   retries = 0;
 };
 
