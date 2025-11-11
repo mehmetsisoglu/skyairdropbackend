@@ -1,144 +1,87 @@
-/* ==============================================
-   Skyline Logic ($SKYL) - PancakeSwap "Buy Bot" v1.2
-   (TypeError Fix, Auto-Reconnect)
-   ============================================== */
-
+// src/buy-bot.js – v4.0 (Typo Fix + Stabil + Gerçek Pair)
 import { ethers } from "ethers";
 import dotenv from "dotenv";
-import { sendBuyDetected } from "./bot.js"; // Telegram bildirim fonksiyonu
+import { sendBuyDetected } from "./bot.js";
 
 dotenv.config();
 
-// --- Kontrat Adresleri ve ABI'lar ---
-// Render Environment'tan alınacak
-const WSS_URL = process.env.BSC_WSS_URL; 
-const PAIR_ADDRESS = process.env.PANCAKESWAP_PAIR_ADDRESS; 
-const SKYL_ADDRESS = "0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c";
-const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"; 
+const WSS_URL = process.env.BSC_WSS_URL || "wss://bsc.publicnode.com";
+const PAIR_ADDRESS = process.env.PANCAKESWAP_PAIR_ADDRESS || "0x56b286e21f585ea76197712dff66837e622e5d21"; // DEFAULT DOĞRU
 
-// PancakeSwap Pair kontratı için gereken en basit ABI (Swap olayı)
+if (!WSS_URL) {
+  console.error("[buy-bot.js] BSC_WSS_URL eksik!");
+  process.exit(1);
+}
+
 const PAIR_ABI = [
   "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)",
-  "function token0() external view returns (address)",
-  "function token1() external view returns (address)"
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
+  "function getReserves() view returns (uint112, uint112, uint32)"
 ];
 
-// Token kontratı için gereken en basit ABI (decimals, symbol)
-const TOKEN_ABI = [
-  "function decimals() external view returns (uint8)",
-  "function symbol() external view returns (string)"
-];
+let provider, pair, isSKYLToken0;
+let retry = 0;
+const MAX_RETRY = 5;
 
-// --- Yardımcı Fonksiyonlar ---
-function formatBigInt(amount, decimals) {
-  // Ethers.js v6'da formatUnits kullanılır
-  return parseFloat(ethers.formatUnits(amount, decimals)).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4 // BNB için daha hassas görünüm
-  });
-}
-
-// === Ana Bot Mantığı ===
-async function startBot() {
-  console.log("[buy-bot.js] 🤖 Skyline Logic Buy Bot başlatılıyor...");
-
-  if (!WSS_URL || !PAIR_ADDRESS) {
-    console.error("[buy-bot.js] ❌ HATA: BSC_WSS_URL veya PANCAKESWAP_PAIR_ADDRESS ortam değişkenleri ayarlanmamış. Bot durduruluyor.");
-    return;
-  }
-
-  // WebSocket sağlayıcısı ile BNB Chain'e bağlan
-  // Not: Hata durumunda yeniden bağlanma mantığı provider.on('error') ile ele alınır
-  const provider = new ethers.WebSocketProvider(WSS_URL);
-  const pairContract = new ethers.Contract(PAIR_ADDRESS, PAIR_ABI, provider);
-
-  // Hangi token'ın 'token0' ve 'token1' olduğunu belirle
-  let token0Address, token1Address;
+const start = async () => {
   try {
-    [token0Address, token1Address] = await Promise.all([
-      pairContract.token0(),
-      pairContract.token1()
-    ]);
-  } catch (e) {
-    console.error("[buy-bot.js] ❌ Kontrat token'ları okunurken hata oluştu:", e.message);
-    return;
-  }
-  
-  const token0Contract = new ethers.Contract(token0Address, TOKEN_ABI, provider);
-  const token1Contract = new ethers.Contract(token1Address, TOKEN_ABI, provider);
+    console.log("[buy-bot.js] Bağlanıyor:", WSS_URL);
+    provider = new ethers.WebSocketProvider(WSS_URL);
 
-  // Token bilgilerini (decimals, symbol) al
-  const [token0, token1] = await Promise.all([
-    { address: token0Address, decimals: await token0Contract.decimals(), symbol: await token0Contract.symbol() },
-    { address: token1Address, decimals: await token1Contract.decimals(), symbol: await token1Contract.symbol() }
-  ]);
+    pair = new ethers.Contract(PAIR_ADDRESS, PAIR_ABI, provider);
 
-  console.log(`[buy-bot.js] ✅ ${token0.symbol}/${token1.symbol} paritesi dinleniyor...`);
+    const [t0, t1] = await Promise.all([pair.token0(), pair.token1()]);
+    isSKYLToken0 = t0.toLowerCase() === "0xa7c4436c2cf6007dd03c3067697553bd51562f2c".toLowerCase();
 
-  // "Swap" (Takas) olayını dinlemeye başla
-  // 'event' objesi ile daha güvenilir bir işlem hash'i alımı
-  pairContract.on("Swap", async (sender, amount0In, amount1In, amount0Out, amount1Out, to, event) => {
-    try {
-      let bnbAmount, skylAmount, message, txHash;
-      
-      // event.log.transactionHash'i kullanmak en güvenilir yoldur (TypeError'ı çözer)
-      txHash = event && event.log ? event.log.transactionHash : "Unknown"; 
+    console.log(`[buy-bot.js] SKYL/${isSKYLToken0 ? "token0" : "token1"} – Dinleniyor...`);
 
-      const skylToken = (token0.address.toLowerCase() === SKYL_ADDRESS.toLowerCase()) ? token0 : token1;
-      const bnbToken = (token0.address.toLowerCase() === WBNB_ADDRESS.toLowerCase()) ? token0 : token1;
+    pair.on("Swap", async (sender, a0In, a1In, a0Out, a1Out, to, event) => {
+      const tx = event.log.transactionHash;
 
-      // Gelen/Giden miktarları doğru token'a ata
-      const skylAmountIn = (skylToken === token0) ? amount0In : amount1In;
-      const skylAmountOut = (skylToken === token0) ? amount0Out : amount1Out;
-      const bnbAmountIn = (bnbToken === token0) ? amount0In : amount1In;
-      const bnbAmountOut = (bnbToken === token0) ? amount0Out : amount1Out;
+      const skylIn = isSKYLToken0 ? a0In : a1In;
+      const skylOut = isSKYLToken0 ? a0Out : a1Out;
+      const wbnbIn = isSKYLToken0 ? a1In : a0In;
+      const wbnbOut = isSKYLToken0 ? a1Out : a0Out;
 
-      // Biri $SKYL ALDIĞINDA (BNB Girdi, SKYL Çıktı)
-      if (bnbAmountIn > 0n && skylAmountOut > 0n) {
-        bnbAmount = formatBigInt(bnbAmountIn, bnbToken.decimals);
-        skylAmount = formatBigInt(skylAmountOut, skylToken.decimals);
-        
-        message = `
-🟢🟢🟢 <b>New $SKYL Buy Detected!</b> 🟢🟢🟢
-
-📈 <b>Amount Bought:</b> ${skylAmount} $SKYL
-💰 <b>Spent:</b> ${bnbAmount} BNB
-👤 <b>Buyer:</b> <code>${to.slice(0, 6)}...${to.slice(-4)}</code>
-        `;
-      }
-      // Biri $SKYL SATTIĞINDA (SKYL Girdi, BNB Çıktı)
-      else if (skylAmountIn > 0n && bnbAmountOut > 0n) {
-        skylAmount = formatBigInt(skylAmountIn, skylToken.decimals);
-        bnbAmount = formatBigInt(bnbAmountOut, bnbToken.decimals);
-        
-        message = `
-🔴🔴🔴 <b>$SKYL Sell Detected!</b> 🔴🔴🔴
-
-📉 <b>Amount Sold:</b> ${skylAmount} $SKYL
-💸 <b>Received:</b> ${bnbAmount} BNB
-👤 <b>Seller:</b> <code>${to.slice(0, 6)}...${to.slice(-4)}</code>
-        `;
+      if (wbnbIn > 0n && skylOut > 0n) {
+        const amount = parseFloat(ethers.formatUnits(skylOut, 18)).toFixed(2);
+        const cost = parseFloat(ethers.formatUnits(wbnbIn, 18)).toFixed(6);
+        const msg = `🟢 BUY DETECTED!\n\n<b>Amount:</b> ${amount} $SKYL\n<b>Cost:</b> ${cost} WBNB\n<b>Wallet:</b> <code>${to.slice(0,6)}...${to.slice(-4)}</code>`;
+        await sendBuyDetected(msg, tx);
       }
 
-      // Mesaj varsa Telegram'a gönder
-      if (message) {
-        await sendBuyDetected(message, txHash); // bot.js'den aldığımız fonksiyonu çağır
+      if (skylIn > 0n && wbnbOut > 0n) {
+        const amount = parseFloat(ethers.formatUnits(skylIn, 18)).toFixed(2);
+        const received = parseFloat(ethers.formatUnits(wbnbOut, 18)).toFixed(6);
+        const msg = `🔴 SELL DETECTED!\n\n<b>Amount:</b> ${amount} $SKYL\n<b>Received:</b> ${received} WBNB\n<b>Wallet:</b> <code>${to.slice(0,6)}...${to.slice(-4)}</code>`;
+        await sendBuyDetected(msg, tx);
       }
-    
-    } catch (e) {
-      console.error("[buy-bot.js] Swap olayı işlenirken hata:", e.message);
+    });
+
+    // Health
+    setInterval(async () => {
+      try {
+        const res = await pair.getReserves();
+        console.log(`[buy-bot.js] Reserves: SKYL ${ethers.formatUnits(res[0], 18)} | WBNB ${ethers.formatUnits(res[1], 18)}`);
+      } catch {}
+    }, 20000);
+
+    retry = 0;
+    console.log("[buy-bot.js] ✅ BOT CANLI – Swap dinleniyor!");
+  } catch (err) {
+    console.error("[buy-bot.js] Hata:", err.message);
+    if (retry < MAX_RETRY) {
+      retry++;
+      console.log(`[buy-bot.js] Yeniden deneme ${retry}/${MAX_RETRY} (5sn)...`);
+      setTimeout(start, 5000);
+    } else {
+      console.error("[buy-bot.js] MAX RETRY – Kapatılıyor.");
+      process.exit(1);
     }
-  });
+  }
+};
 
-  // Bağlantı hatalarını yakala ve yeniden bağlanmayı dene
-  provider.on('error', (err) => {
-    console.error(`[buy-bot.js] WebSocket Bağlantı Hatası: ${err.message}`);
-    console.log('[buy-bot.js] 5 saniye içinde yeniden bağlanmaya çalışılıyor...');
-    setTimeout(startBot, 5000); 
-  });
+start();
 
-  console.log("[buy-bot.js] ✅ Bot, PancakeSwap 'Swap' olaylarını dinlemeye başladı.");
-}
-
-// Botu başlat
-startBot();
+process.on("SIGINT", () => provider?.destroy());
