@@ -8,8 +8,15 @@
     "start": "concurrently \"node src/server.js\" \"node src/buy-bot.js\"",
     "dev": "concurrently \"nodemon src/server.js\" \"nodemon src/buy-bot.js\""
   },
-  "keywords": ["airdrop", "crypto", "skylinklogic", "web3"],
-  "author": "Mehmet Sisoglu",
+  "keywords": [
+    "airdrop",
+    "crypto",
+    "skylinklogic",
+    "web3",
+    "skyline",
+    "bnb"
+  ],
+  "author": "Mehmet Sisoglu (@SkylineLogicAI)",
   "license": "MIT",
   "dependencies": {
     "concurrently": "^9.2.1",
@@ -25,5 +32,8 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.7"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
