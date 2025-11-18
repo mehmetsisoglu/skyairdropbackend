@@ -1,4 +1,4 @@
-// src/bot.js (v14.0 – MASTER EDITION: All Features + Conflict Fix)
+// src/bot.js (v14.1 – FIX: Announce Regex & AI Logic Isolation)
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 
@@ -13,11 +13,11 @@ const BUY_LINK = "https://pancakeswap.finance/swap?outputCurrency=" + TOKEN_CA;
 const WEBSITE = "https://skyl.online/";
 const AIRDROP_PAGE = "https://skyl.online/airdrop/";
 
-// --- GÖRSELLER (ChatGPT ile ürettiğin linkleri buraya koyabilirsin) ---
+// --- GÖRSELLER ---
 const IMG_WELCOME = "https://skyl.online/images/Skyhawk_Welcome.png"; 
 const IMG_RAID = "https://skyl.online/images/Skyhawk_Raid.png";       
 
-// --- BELLEK YÖNETİMİ ---
+// --- MEMORY ---
 const userCooldowns = new Map();
 const captchaPending = new Map(); 
 const SPAM_LIMIT_SECONDS = 4;
@@ -27,14 +27,14 @@ let bot = null;
 if (!TOKEN) {
   console.warn("[bot.js] Token eksik!");
 } else {
-  // ⚠️ ÇAKIŞMAYI ÖNLEMEK İÇİN: Başlangıçta polling KAPALI
+  // Polling FALSE başlıyor (buy-bot.js başlatacak)
   bot = new TelegramBot(TOKEN, { polling: false }); 
-  console.log("[bot.js] Bot instance created (Waiting for start command).");
+  console.log("[bot.js] Bot instance created.");
 }
 
 const escape = (str) => String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// --- SPAM KONTROL ---
+// --- SPAM CHECK ---
 const checkSpam = (userId) => {
     const currentTime = Date.now();
     if (userCooldowns.has(userId)) {
@@ -46,56 +46,74 @@ const checkSpam = (userId) => {
 };
 
 // ====================================================
-//       BAŞLATMA FONKSİYONU (Çakışma Çözümü)
+//       BAŞLATMA (Conflict Fix)
 // ====================================================
 export const startTelegramBot = async () => {
     if (!bot) return;
-    
     try {
-        // Varsa eski webhook'u sil (Temiz başlangıç)
         await bot.deleteWebHook();
-        console.log("[bot.js] Webhook temizlendi.");
-
-        // Polling'i manuel başlat
         if (!bot.isPolling()) {
             await bot.startPolling();
-            console.log("[bot.js] ✅ Polling (Dinleme) Başlatıldı.");
+            console.log("[bot.js] ✅ Polling Başlatıldı.");
         }
     } catch (error) {
-        if (error.code === 'ETELEGRAM' && error.message.includes('409')) {
-             console.warn("[bot.js] ⚠️ Çakışma algılandı. (Zaten çalışıyor olabilir, görmezden geliniyor).");
-        } else {
-             console.error("[bot.js] Başlatma hatası:", error.message);
-        }
+        if (!error.message.includes('409')) console.error("[bot.js] Start Error:", error.message);
     }
 };
 
 // ====================================================
-//           KOMUTLAR VE ÖZELLİKLER
+//           KOMUTLAR
 // ====================================================
 if (bot) {
     
-    // 1. AI Assistant (/ask)
+    // 1. ADMIN ANNOUNCEMENT (/announce)
+    // DÜZELTME: Regex ([\s\S]+) yapıldı, böylece alt satırlar ve emojiler de alınır.
+    bot.onText(/\/announce([\s\S]+)/, async (msg, match) => {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const textToAnnounce = match[1].trim(); // Boşlukları temizle
+
+        // GÜVENLİK KONTROLÜ
+        try {
+            const member = await bot.getChatMember(chatId, userId);
+            if (!['creator', 'administrator'].includes(member.status)) {
+                // Sessizce reddet veya uyar
+                return bot.sendMessage(chatId, "⛔ Only admins can use this command.");
+            }
+
+            // Eski mesajı sil
+            bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
+
+            // Duyuruyu gönder
+            const announcement = `📢 *ANNOUNCEMENT*\n\n${textToAnnounce}\n\n🚀 *$SKYL Team*`;
+            await bot.sendMessage(chatId, announcement, { parse_mode: 'Markdown' });
+
+        } catch (e) {
+            console.error("Announce Error:", e.message);
+        }
+    });
+
+    // 2. AI Assistant (/ask)
     const aiKnowledgeBase = [
         { keys: ["contract", "ca", "address"], answer: `The Official Contract is:\n\`${TOKEN_CA}\`` },
         { keys: ["buy", "how to", "purchase"], answer: `You can buy $SKYL on PancakeSwap here: [Buy Link](${BUY_LINK})` },
         { keys: ["airdrop", "claim"], answer: `The Airdrop is live! Visit: ${AIRDROP_PAGE}` },
-        { keys: ["price", "chart"], answer: "Use /chart to see the live price action." },
-        { keys: ["utility", "use case"], answer: "Skyline Logic AI provides advanced blockchain analytics." },
-        { keys: ["team", "dev"], answer: "The team is anonymous but verified. Building the future of AI on BSC." }
+        { keys: ["chart", "price"], answer: "Type /chart for live price." }
     ];
 
     bot.onText(/\/ask (.+)/, (msg, match) => {
         if (checkSpam(msg.from.id)) return;
         const question = match[1].toLowerCase();
         const found = aiKnowledgeBase.find(item => item.keys.some(k => question.includes(k)));
+        
         const response = found 
             ? `🤖 *Skyline Logic:* ${found.answer}` 
             : `🤖 *Skyline Logic:* I am analyzing this... Check our [Website](${WEBSITE}) for details.`;
+            
         bot.sendMessage(msg.chat.id, response, { parse_mode: 'Markdown', disable_web_page_preview: true });
     });
 
-    // 2. Temel Komutlar (/ca, /chart, /socials)
+    // 3. Temel Komutlar
     bot.onText(/\/ca/, (msg) => {
         if (checkSpam(msg.from.id)) return;
         bot.sendMessage(msg.chat.id, `💎 *Contract:* \`${TOKEN_CA}\`\n_(Tap to copy)_`, { parse_mode: 'Markdown' });
@@ -113,14 +131,14 @@ if (bot) {
     bot.onText(/\/(socials|site|links)/, (msg) => {
         if (checkSpam(msg.from.id)) return;
         const message = `
-🌐 *Skyline Logic Links*
+🌐 *Skyline Logic Official Links*
 🌍 [Website](${WEBSITE}) | 🐦 [Twitter](https://x.com/SkylineLogicAI)
 ✈️ [Telegram](https://t.me/SkylineLogicChat) | 📸 [Instagram](https://www.instagram.com/skyline.logic)
         `;
         bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
     });
     
-    // 3. Raid Bot (/raid)
+    // 4. Raid Bot (/raid)
     bot.onText(/\/raid (.+)/, async (msg, match) => {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
@@ -138,34 +156,31 @@ if (bot) {
         } catch (e) {}
     });
 
-    // 4. Kelime Tetikleyicileri (Keyword Triggers)
+    // 5. KEYWORD TRIGGERS (Message Handler)
+    // DÜZELTME: '/announce' gibi komutların buraya düşmesini engelliyoruz.
     bot.on('message', (msg) => {
+        // Eğer mesaj boşsa veya "/" ile başlıyorsa (yani komutsa) HİÇBİR ŞEY YAPMA
         if (!msg.text || msg.text.startsWith('/')) return; 
+
         const text = msg.text.toLowerCase();
         const chatId = msg.chat.id;
 
-        // FUD Koruması
+        // FUD & Hype Check
         const fudWords = ["scam", "rug", "honeypot", "fake"];
         if (fudWords.some(w => text.includes(w))) {
              bot.sendMessage(chatId, "🚫 *No FUD allowed!* Trust the Logic.", { parse_mode: 'Markdown', reply_to_message_id: msg.message_id });
         }
-
-        // Hype
         if (text.includes("moon") || text.includes("lambo")) {
              bot.sendMessage(chatId, "🚀 *To the Sky!* $SKYL taking off.", { parse_mode: 'Markdown' });
         }
     });
 
-    // 5. Welcome + Captcha
+    // 6. Welcome & Captcha
     bot.on('new_chat_members', async (msg) => {
         const chatId = msg.chat.id;
         for (const member of msg.new_chat_members) {
             if (member.is_bot) continue;
-            
-            // Sustur (Mute)
-            try {
-                await bot.restrictChatMember(chatId, member.id, { can_send_messages: false });
-            } catch (e) {}
+            try { await bot.restrictChatMember(chatId, member.id, { can_send_messages: false }); } catch (e) {}
 
             const n1 = Math.floor(Math.random()*5)+1, n2 = Math.floor(Math.random()*5)+1;
             const ans = n1+n2;
@@ -180,25 +195,17 @@ if (bot) {
                 reply_markup: { inline_keyboard: [opts] }
             });
             captchaPending.set(member.id, sent.message_id);
-            // 60sn sonra captcha mesajını sil
             setTimeout(()=>{ if(captchaPending.has(member.id)) bot.deleteMessage(chatId, sent.message_id).catch(()=>{}); }, 60000);
         }
     });
 
-    // Captcha Cevap Kontrolü
     bot.on('callback_query', async (q) => {
         const [type, status, id] = q.data.split('_'); 
         if (type !== 'cap') return;
         if (q.from.id != id) return bot.answerCallbackQuery(q.id, {text:"Not for you!", show_alert:true});
         
         if (status === 'ok') {
-            // Yasağı kaldır (Unmute)
-            try {
-                await bot.restrictChatMember(q.message.chat.id, id, { 
-                    can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true 
-                });
-            } catch(e){}
-            
+            try { await bot.restrictChatMember(q.message.chat.id, id, { can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true }); } catch(e){}
             await bot.answerCallbackQuery(q.id, {text:"Verified!"});
             bot.deleteMessage(q.message.chat.id, q.message.message_id).catch(()=>{});
             bot.sendMessage(q.message.chat.id, `✅ Verified! Check /ca and /chart`, { disable_notification: true });
@@ -209,7 +216,7 @@ if (bot) {
 }
 
 // ====================================================
-//             DIŞA AKTARILANLAR (NOTIFICATION)
+//             EXPORTS
 // ====================================================
 export const sendBuyDetected = async (amountSKYL, costWBNB, wallet, txHash) => {
   if (!bot || !CHAT_ID) return;
@@ -219,7 +226,6 @@ $SKYL Buy Detected!
 <b>Cost:</b> ${parseFloat(costWBNB).toFixed(6)} WBNB
 <b>Wallet:</b> <code>${escape(wallet.slice(0,6)+'...'+wallet.slice(-4))}</code>
 <a href="https://bscscan.com/tx/${escape(txHash)}">View on BscScan</a>`.trim();
-
   try { await bot.sendPhoto(CHAT_ID, "https://skyl.online/images/Skyhawk_Buy.png", { caption: txt, parse_mode: "HTML" }); } catch (e) {}
 };
 
@@ -230,6 +236,5 @@ $SKYL Airdrop Claim!
 <b>Amount:</b> ${parseFloat(amount).toLocaleString()} $SKYL
 <b>Wallet:</b> <code>${escape(wallet)}</code>
 <a href="https://bscscan.com/address/${escape(wallet)}">View on BscScan</a>`.trim();
-  
   try { await bot.sendPhoto(CHAT_ID, "https://skyl.online/images/Skyhawk_Airdrop.png", { caption: txt, parse_mode: "HTML" }); } catch (e) {}
 };
