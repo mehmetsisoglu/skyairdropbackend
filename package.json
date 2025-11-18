@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"node src/server.js\" \"node src/buy-bot.js\"",
+    "start": "node src/server.js",
     "dev": "concurrently \"nodemon src/server.js\" \"nodemon src/buy-bot.js\""
   },
   "keywords": [
