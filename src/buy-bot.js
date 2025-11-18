@@ -1,10 +1,8 @@
-// src/buy-bot.js (v8.1 – SADECE BUY DETECTED + X POST KAPALI)
+// src/buy-bot.js (v9.0 – CONFLICT FIX EDITION)
 import { ethers } from "ethers";
 import dotenv from "dotenv";
-import { sendBuyDetected } from "./bot.js";
-
-// === X OTOMASYONU (ŞİMDİLİK KAPALI) ===
-// import { postToX } from "./x-poster.js"; // KAPALI – İleride açmak istersen uncomment
+// startTelegramBot fonksiyonunu bot.js'den alıyoruz
+import { sendBuyDetected, startTelegramBot } from "./bot.js"; 
 
 dotenv.config();
 
@@ -25,66 +23,69 @@ const ABI = [
 // === DEĞİŞKENLER ===
 let provider, pair;
 let retries = 0;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 
-// === ANA FONKSİYON ===
+// === ANA FONKSİYON (WSS Listener) ===
 const start = () => {
   console.log("[buy-bot.js] Alchemy WSS ile bağlanıyor...");
-  provider = new ethers.WebSocketProvider(WSS);
-  pair = new ethers.Contract(PAIR, ABI, provider);
+  
+  try {
+      provider = new ethers.WebSocketProvider(WSS);
+      pair = new ethers.Contract(PAIR, ABI, provider);
+    
+      pair.on("Swap", async (sender, amount0In, amount1In, amount0Out, amount1Out, to, event) => {
+        const txHash = event.log.transactionHash;
+    
+        // SKYL = token0, WBNB = token1 (Standart V2 Pair varsayımı)
+        // SADECE BUY: WBNB (In) > 0 ve SKYL (Out) > 0
+        if (amount1In > 0n && amount0Out > 0n) {
+          const skylAmount = ethers.formatUnits(amount0Out, 18);
+          const wbnbCost = ethers.formatUnits(amount1In, 18);
+    
+          // Telegram Bildirimi
+          await sendBuyDetected(skylAmount, wbnbCost, to, txHash).catch(err =>
+            console.error("[buy-bot.js] Telegram hatası:", err.message)
+          );
+        }
+      });
+    
+      console.log("[buy-bot.js] Dinleme Başladı (Buy Detected Active).");
+      retries = 0;
 
-  pair.on("Swap", async (sender, amount0In, amount1In, amount0Out, amount1Out, to, event) => {
-    const txHash = event.log.transactionHash;
-
-    // SKYL = token0, WBNB = token1
-    // SADECE BUY: WBNB giriyor, SKYL çıkıyor
-    if (amount1In > 0n && amount0Out > 0n) {
-      const skylAmount = ethers.formatUnits(amount0Out, 18);
-      const wbnbCost = ethers.formatUnits(amount1In, 18);
-
-      // === TELEGRAM BİLDİRİMİ (AKTİF) ===
-      await sendBuyDetected(skylAmount, wbnbCost, to, txHash).catch(err =>
-        console.error("[buy-bot.js] Telegram hatası:", err.message)
-      );
-
-      // === X OTOMASYONU (KAPALI) ===
-      // await postToX(skylAmount, wbnbCost, to, txHash); // KAPALI
-      // console.log("[buy-bot.js] X post atılmadı – Otomasyon kapalı.");
-    }
-    // SATIŞ: YOK SAYILIYOR
-  });
-
-  console.log("[buy-bot.js] SADECE BUY DETECTED aktif! X post KAPALI.");
-  retries = 0;
+  } catch (error) {
+      console.error("[buy-bot.js] Bağlantı hatası:", error);
+      reconnect();
+  }
 };
 
 // === YENİDEN BAĞLANMA ===
 const reconnect = () => {
-  if (provider) {
-    provider.removeAllListeners();
-    provider.destroy();
-  }
-
   if (retries >= MAX_RETRIES) {
-    console.error("[buy-bot.js] MAX RETRY AŞILDI – Bot durduruluyor.");
+    console.error("[buy-bot.js] Çok fazla hata. Çıkış yapılıyor.");
     process.exit(1);
   }
-
   retries++;
-  console.log(`[buy-bot.js] Yeniden bağlanma: ${retries}/${MAX_RETRIES} (3sn)`);
-  setTimeout(start, 3000);
+  console.log(`[buy-bot.js] Yeniden bağlanılıyor... (${retries}/${MAX_RETRIES})`);
+  setTimeout(start, 5000);
 };
 
-// === HATA YAKALAMA ===
-provider?.on("error", reconnect);
-provider?.on("close", reconnect);
+if (provider) {
+    provider.on("error", reconnect);
+    provider.on("close", reconnect);
+}
 
-// === BAŞLAT ===
+// === SİSTEMİ BAŞLAT ===
+
+// 1. Önce Telegram Botunu Başlat (Polling'i açar)
+console.log("[buy-bot.js] Telegram Botu başlatılıyor...");
+startTelegramBot(); 
+
+// 2. Sonra Blockchain Dinleyiciyi Başlat
 start();
 
-// === GRACEFUL SHUTDOWN ===
+// === KAPATMA ===
 process.on("SIGINT", () => {
   console.log("[buy-bot.js] Kapatılıyor...");
-  provider?.destroy();
+  if (provider) provider.destroy();
   process.exit(0);
 });
