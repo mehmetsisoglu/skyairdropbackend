@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
 import 'dotenv/config';
+import { startSkylineSystem } from './buy-bot.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -156,7 +157,10 @@ app.get('/', (req, res) => {
 app.listen(PORT, async () => {
   await initDB();
   console.log(`SKYL backend (PostgreSQL) running on ${PORT}`);
-  console.log(`http://localhost:${PORT}`);
+
+  // ==> BURASI YENİ: BuyBot ve Telegram Botunu Server ile birlikte başlatıyoruz
+  console.log("🚀 Skyline Logic Sistemleri Başlatılıyor...");
+  startSkylineSystem();
 });
 
 // Hata yakalama
