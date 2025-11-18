@@ -1,4 +1,4 @@
-// src/bot.js (v14.1 – FIX: Announce Regex & AI Logic Isolation)
+// src/bot.js (v15.0 – MASTER FINAL: All Features + Goodbye + Conflict Fix)
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 
@@ -13,11 +13,12 @@ const BUY_LINK = "https://pancakeswap.finance/swap?outputCurrency=" + TOKEN_CA;
 const WEBSITE = "https://skyl.online/";
 const AIRDROP_PAGE = "https://skyl.online/airdrop/";
 
-// --- GÖRSELLER ---
+// --- IMAGES ---
 const IMG_WELCOME = "https://skyl.online/images/Skyhawk_Welcome.png"; 
-const IMG_RAID = "https://skyl.online/images/Skyhawk_Raid.png";       
+const IMG_RAID = "https://skyl.online/images/Skyhawk_Raid.png";
+const IMG_GOODBYE = "https://skyl.online/images/Skyhawk_Goodbye.png";       
 
-// --- MEMORY ---
+// --- MEMORY & LIMITS ---
 const userCooldowns = new Map();
 const captchaPending = new Map(); 
 const SPAM_LIMIT_SECONDS = 4;
@@ -25,11 +26,11 @@ const SPAM_LIMIT_SECONDS = 4;
 let bot = null;
 
 if (!TOKEN) {
-  console.warn("[bot.js] Token eksik!");
+  console.warn("[bot.js] Token missing! Bot could not start.");
 } else {
-  // Polling FALSE başlıyor (buy-bot.js başlatacak)
+  // ⚠️ POLLING FALSE: Başlangıçta kapalı (buy-bot.js başlatacak)
   bot = new TelegramBot(TOKEN, { polling: false }); 
-  console.log("[bot.js] Bot instance created.");
+  console.log("[bot.js] Bot instance created (Idle).");
 }
 
 const escape = (str) => String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -46,15 +47,15 @@ const checkSpam = (userId) => {
 };
 
 // ====================================================
-//       BAŞLATMA (Conflict Fix)
+//       STARTUP LOGIC (Prevents 409 Conflict)
 // ====================================================
 export const startTelegramBot = async () => {
     if (!bot) return;
     try {
-        await bot.deleteWebHook();
+        await bot.deleteWebHook(); // Temiz başlangıç
         if (!bot.isPolling()) {
             await bot.startPolling();
-            console.log("[bot.js] ✅ Polling Başlatıldı.");
+            console.log("[bot.js] ✅ Polling (Listening) Started.");
         }
     } catch (error) {
         if (!error.message.includes('409')) console.error("[bot.js] Start Error:", error.message);
@@ -62,38 +63,54 @@ export const startTelegramBot = async () => {
 };
 
 // ====================================================
-//           KOMUTLAR
+//           COMMANDS & LOGIC
 // ====================================================
 if (bot) {
     
-    // 1. ADMIN ANNOUNCEMENT (/announce)
-    // DÜZELTME: Regex ([\s\S]+) yapıldı, böylece alt satırlar ve emojiler de alınır.
+    // 1. HELP COMMAND (/help)
+    bot.onText(/\/help/, (msg) => {
+        if (checkSpam(msg.from.id)) return;
+        const helpMsg = `
+🤖 *Skyline Logic AI - Command List*
+
+📌 *Investor Commands:*
+▪️ \`/ca\`  → Get Contract Address
+▪️ \`/chart\` → View Live Chart
+▪️ \`/socials\` → Official Social Links
+▪️ \`/ask <question>\` → Ask AI Assistant
+
+🛡️ *Security & Fun:*
+▪️ *Anti-FUD:* Active
+▪️ *Captcha:* Active
+▪️ *Raid System:* Ready
+
+👮‍♂️ *Admin Only:*
+▪️ \`/raid <link>\` → Start a Raid
+▪️ \`/announce <msg>\` → Make an announcement
+        `;
+        bot.sendMessage(msg.chat.id, helpMsg, { parse_mode: 'Markdown' });
+    });
+
+    // 2. ADMIN ANNOUNCEMENT (/announce)
     bot.onText(/\/announce([\s\S]+)/, async (msg, match) => {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
-        const textToAnnounce = match[1].trim(); // Boşlukları temizle
+        const textToAnnounce = match[1].trim();
 
-        // GÜVENLİK KONTROLÜ
         try {
             const member = await bot.getChatMember(chatId, userId);
             if (!['creator', 'administrator'].includes(member.status)) {
-                // Sessizce reddet veya uyar
                 return bot.sendMessage(chatId, "⛔ Only admins can use this command.");
             }
-
-            // Eski mesajı sil
+            
             bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
-
-            // Duyuruyu gönder
             const announcement = `📢 *ANNOUNCEMENT*\n\n${textToAnnounce}\n\n🚀 *$SKYL Team*`;
             await bot.sendMessage(chatId, announcement, { parse_mode: 'Markdown' });
 
-        } catch (e) {
-            console.error("Announce Error:", e.message);
-        }
+        } catch (e) { console.error("Announce Error:", e.message); }
     });
 
-    // 2. AI Assistant (/ask)
+    // 3. AI Assistant (/ask)
     const aiKnowledgeBase = [
         { keys: ["contract", "ca", "address"], answer: `The Official Contract is:\n\`${TOKEN_CA}\`` },
         { keys: ["buy", "how to", "purchase"], answer: `You can buy $SKYL on PancakeSwap here: [Buy Link](${BUY_LINK})` },
@@ -105,15 +122,13 @@ if (bot) {
         if (checkSpam(msg.from.id)) return;
         const question = match[1].toLowerCase();
         const found = aiKnowledgeBase.find(item => item.keys.some(k => question.includes(k)));
-        
         const response = found 
             ? `🤖 *Skyline Logic:* ${found.answer}` 
             : `🤖 *Skyline Logic:* I am analyzing this... Check our [Website](${WEBSITE}) for details.`;
-            
         bot.sendMessage(msg.chat.id, response, { parse_mode: 'Markdown', disable_web_page_preview: true });
     });
 
-    // 3. Temel Komutlar
+    // 4. Basic Commands (/ca, /chart, /socials)
     bot.onText(/\/ca/, (msg) => {
         if (checkSpam(msg.from.id)) return;
         bot.sendMessage(msg.chat.id, `💎 *Contract:* \`${TOKEN_CA}\`\n_(Tap to copy)_`, { parse_mode: 'Markdown' });
@@ -138,7 +153,7 @@ if (bot) {
         bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
     });
     
-    // 4. Raid Bot (/raid)
+    // 5. Raid Bot (/raid)
     bot.onText(/\/raid (.+)/, async (msg, match) => {
         const chatId = msg.chat.id;
         const userId = msg.from.id;
@@ -147,7 +162,6 @@ if (bot) {
             if (!['creator', 'administrator'].includes(member.status)) return;
             
             bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
-            
             await bot.sendPhoto(chatId, IMG_RAID, {
                 caption: `🚨 *SKYLINE RAID ALERT*\n\n👇 *SMASH THIS TWEET* 👇`,
                 parse_mode: 'Markdown',
@@ -156,18 +170,13 @@ if (bot) {
         } catch (e) {}
     });
 
-    // 5. KEYWORD TRIGGERS (Message Handler)
-    // DÜZELTME: '/announce' gibi komutların buraya düşmesini engelliyoruz.
+    // 6. Keyword Triggers (Auto-Mod)
     bot.on('message', (msg) => {
-        // Eğer mesaj boşsa veya "/" ile başlıyorsa (yani komutsa) HİÇBİR ŞEY YAPMA
         if (!msg.text || msg.text.startsWith('/')) return; 
-
         const text = msg.text.toLowerCase();
         const chatId = msg.chat.id;
 
-        // FUD & Hype Check
-        const fudWords = ["scam", "rug", "honeypot", "fake"];
-        if (fudWords.some(w => text.includes(w))) {
+        if (["scam", "rug", "honeypot", "fake"].some(w => text.includes(w))) {
              bot.sendMessage(chatId, "🚫 *No FUD allowed!* Trust the Logic.", { parse_mode: 'Markdown', reply_to_message_id: msg.message_id });
         }
         if (text.includes("moon") || text.includes("lambo")) {
@@ -175,7 +184,7 @@ if (bot) {
         }
     });
 
-    // 6. Welcome & Captcha
+    // 7. Welcome + Captcha
     bot.on('new_chat_members', async (msg) => {
         const chatId = msg.chat.id;
         for (const member of msg.new_chat_members) {
@@ -199,13 +208,35 @@ if (bot) {
         }
     });
 
+    // 8. Goodbye Message (Member Left)
+    bot.on('left_chat_member', async (msg) => {
+        const chatId = msg.chat.id;
+        const leftMember = msg.left_chat_member;
+        if (leftMember.is_bot) return;
+
+        const goodbyeCaption = `
+👋 *Goodbye, ${leftMember.first_name}...*
+
+You have disconnected from the Skyline Logic network.
+We hope to see you flying with us again one day.
+
+🦅 _Skyhawk is watching the horizon._
+        `;
+        try { await bot.sendPhoto(chatId, IMG_GOODBYE, { caption: goodbyeCaption, parse_mode: 'Markdown' }); } 
+        catch (e) { bot.sendMessage(chatId, goodbyeCaption, { parse_mode: 'Markdown' }); }
+    });
+
+    // Captcha Callback Logic
     bot.on('callback_query', async (q) => {
         const [type, status, id] = q.data.split('_'); 
         if (type !== 'cap') return;
         if (q.from.id != id) return bot.answerCallbackQuery(q.id, {text:"Not for you!", show_alert:true});
         
         if (status === 'ok') {
-            try { await bot.restrictChatMember(q.message.chat.id, id, { can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true }); } catch(e){}
+            try { await bot.restrictChatMember(q.message.chat.id, id, { 
+                can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true 
+            }); } catch(e){}
+            
             await bot.answerCallbackQuery(q.id, {text:"Verified!"});
             bot.deleteMessage(q.message.chat.id, q.message.message_id).catch(()=>{});
             bot.sendMessage(q.message.chat.id, `✅ Verified! Check /ca and /chart`, { disable_notification: true });
@@ -216,7 +247,7 @@ if (bot) {
 }
 
 // ====================================================
-//             EXPORTS
+//             EXPORTS (NOTIFICATIONS)
 // ====================================================
 export const sendBuyDetected = async (amountSKYL, costWBNB, wallet, txHash) => {
   if (!bot || !CHAT_ID) return;
