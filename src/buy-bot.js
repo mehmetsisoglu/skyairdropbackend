@@ -111,17 +111,13 @@ if (provider) {
 //               SİSTEMİ BAŞLATMA
 // ====================================================
 
-// 1. Adım: Telegram Botunu Başlat (Manuel Polling)
-// Bu işlem 'server.js' ile çakışmayı (409 Hatasını) önler.
-console.log("[buy-bot.js] Telegram Bot servisi başlatılıyor...");
-startTelegramBot(); 
+// === SİSTEM BAŞLATICI (EXPORT) ===
+export const startSkylineSystem = async () => {
+    console.log("[buy-bot.js] Sistem birleştiriliyor...");
+    
+    // 1. Telegram Botunu Başlat
+    await startTelegramBot();
 
-// 2. Adım: Blockchain Dinleyicisini Başlat
-start();
-
-// === GÜVENLİ KAPATMA (Graceful Shutdown) ===
-process.on("SIGINT", () => {
-  console.log("[buy-bot.js] İşlem durduruluyor...");
-  if (provider) provider.destroy();
-  process.exit(0);
-});
+    // 2. Blockchain Dinleyicisini Başlat
+    start();
+};
