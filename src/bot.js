@@ -56,7 +56,7 @@ if (bot) {
 
 \`${TOKEN_CA}\`
 
-_(Kopyalamak için adrese dokunun)_
+_(Tap the address to copy)_
 `;
       bot.sendMessage(msg.chat.id, message, {
           parse_mode: 'Markdown',
@@ -90,10 +90,10 @@ _(Kopyalamak için adrese dokunun)_
       if (checkSpam(msg.from.id)) return;
 
       const message = `
-🌐 *Skyline Logic Resmi Bağlantılar*
+🌐 *Skyline Logic Official Links*
 
-🌍 [Web Sitesi](${WEBSITE})
-🎁 [Airdrop Sayfası](${AIRDROP_PAGE})
+🌍 [Web Site](${WEBSITE})
+🎁 [Airdrop](${AIRDROP_PAGE})
 
 🐦 [X (Twitter)](https://x.com/SkylineLogicAI)
 ✈️ [Telegram](https://t.me/SkylineLogicChat)
