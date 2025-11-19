@@ -30,7 +30,7 @@ async function fetchCoinDesk() {
       url: item.link
     }));
   } catch (err) {
-    console.error('[News] CoinDesk Hatası:', err.message);
+    // RSS bazen geçici olarak ulaşılamaz olabilir, sessizce geç
     return [];
   }
 }
@@ -38,7 +38,6 @@ async function fetchCoinDesk() {
 // --- 3. KAYNAK: CoinStats (API) ---
 async function fetchCoinStats() {
   try {
-    // CoinStats Public News Endpoint
     const response = await axios.get('https://api.coinstats.app/public/v1/news/trending?skip=0&limit=3');
     const data = response.data.news || [];
     return data.map(item => ({
@@ -52,11 +51,10 @@ async function fetchCoinStats() {
   }
 }
 
-// --- 4. KAYNAK: CryptoPanic (API) ---
-// Not: CryptoPanic API Key gerektirir. Eğer yoksa public RSS kullanırız.
+// --- 4. KAYNAK: CryptoPanic (API/RSS Hibrit) ---
 async function fetchCryptoPanic() {
   try {
-    // API Key varsa API, yoksa RSS (Daha güvenli fallback)
+    // API Key varsa API, yoksa RSS kullan
     const apiKey = process.env.CRYPTOPANIC_API_KEY;
     
     if (apiKey) {
@@ -68,24 +66,21 @@ async function fetchCryptoPanic() {
         url: item.url
       }));
     } else {
-      // API Key yoksa RSS kullan (Ücretsiz ve Key gerektirmez)
       const feed = await parser.parseURL('https://cryptopanic.com/news/rss/');
       return feed.items.slice(0, 3).map(item => ({
         title: item.title,
-        source: 'CryptoPanic (RSS)',
+        source: 'CryptoPanic',
         url: item.link
       }));
     }
   } catch (err) {
-    console.error('[News] CryptoPanic Hatası:', err.message);
     return [];
   }
 }
 
-// --- 5. KAYNAK: Binance (RSS/Blog) ---
+// --- 5. KAYNAK: Binance (RSS) ---
 async function fetchBinance() {
   try {
-    // Binance'in resmi duyuru RSS'i
     const feed = await parser.parseURL('https://www.binance.com/en/feed/rss'); 
     return feed.items.slice(0, 2).map(item => ({
       title: item.title,
@@ -93,7 +88,6 @@ async function fetchBinance() {
       url: item.link
     }));
   } catch (err) {
-    // Binance RSS bazen bloklanabilir, sessizce geçelim
     return [];
   }
 }
@@ -102,7 +96,7 @@ async function fetchBinance() {
 export async function getLatestCryptoNews() {
   console.log('🌍 Global Haber Ağları Taranıyor...');
 
-  // Tüm kaynaklara aynı anda istek at (Paralel İşlem)
+  // Tüm kaynaklara paralel istek at (Biri bozuksa diğeri çalışır)
   const results = await Promise.allSettled([
     fetchCryptoCompare(),
     fetchCoinDesk(),
@@ -111,7 +105,7 @@ export async function getLatestCryptoNews() {
     fetchBinance()
   ]);
 
-  // Başarılı olanları tek bir listede birleştir
+  // Gelen verileri tek listede birleştir
   let allNews = [];
   results.forEach(result => {
     if (result.status === 'fulfilled') {
@@ -119,10 +113,10 @@ export async function getLatestCryptoNews() {
     }
   });
 
-  // Haberleri Karıştır (Shuffle) - Hep aynı kaynak üstte olmasın
+  // Haberleri karıştır (Shuffle) - Hep aynı site en üstte çıkmasın
   allNews = allNews.sort(() => Math.random() - 0.5);
 
-  // AI token limitini aşmamak için en fazla 10-12 haber seç
+  // En fazla 12 haber seç (AI limitini zorlamamak için)
   const finalNews = allNews.slice(0, 12);
 
   console.log(`✅ Toplam ${finalNews.length} global haber analiz için hazırlandı.`);
