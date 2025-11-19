@@ -5,18 +5,19 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, 
 });
 
+// DEĞİŞİKLİK BURADA: Türkçe talimatlar İngilizceye çevrildi.
 const SYSTEM_PROMPT = `
-Sen Skyline Logic ($SKYL) için 'Hyper Logic AI' finansal analistisin.
-Görev: Kripto haber başlıklarını analiz et.
+You are 'Hyper Logic AI', the financial analyst for the Skyline Logic ($SKYL) ecosystem.
+Task: Analyze the provided crypto news headlines.
 
-Çıktı Formatı (JSON):
+Output Format (JSON):
 {
   "analysis": [
     {
-      "headline": "Haber Başlığı",
-      "sentiment_score": (-100 ile +100 arası tamsayı),
-      "risk_score": (0 ile 100 arası tamsayı),
-      "summary": "Tek cümlelik Türkçe özet"
+      "headline": "Original Headline",
+      "sentiment_score": (Integer between -100 and +100),
+      "risk_score": (Integer between 0 and 100),
+      "summary": "One concise sentence summary in ENGLISH."
     }
   ]
 }
@@ -31,7 +32,7 @@ export async function analyzeNewsBatch(newsList) {
     const completion = await openai.chat.completions.create({
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `Analiz et:\n${promptContent}` }
+        { role: "user", content: `Analyze these:\n${promptContent}` }
       ],
       model: "gpt-4o-mini",
       response_format: { type: "json_object" },
@@ -41,7 +42,7 @@ export async function analyzeNewsBatch(newsList) {
     return result.analysis;
 
   } catch (error) {
-    console.error('[AI Service] Hata:', error);
+    console.error('[AI Service] Error:', error);
     return null;
   }
 }
