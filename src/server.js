@@ -1,10 +1,12 @@
-// src/server.js (v3.0 – FULL LOGIC PRESERVED + GRACEFUL SHUTDOWN)
+// src/server.js (v3.1 – Hyper Logic AI Entegre Edildi)
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
-// Veritabanı ve Bot başlatıcıyı dışarıdan alıyoruz (Modüler Yapı)
+// Veritabanı ve Bot başlatıcıyı dışarıdan alıyoruz
 import { pool, initDB } from './db.js'; 
 import { startSkylineSystem } from './buy-bot.js';
+// YENİ: Sentiment Analiz Modülü (Hyper Logic AI)
+import { startSentimentLoop } from './cron/sentimentJob.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -20,7 +22,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // ====================== ROUTES ======================
 
-// 1. X (Twitter) Doğrulama (Orijinal Mantık Korundu)
+// 1. X (Twitter) Doğrulama
 app.post('/verify-x', async (req, res) => {
   console.log('POST /verify-x →', req.body);
 
@@ -30,13 +32,11 @@ app.post('/verify-x', async (req, res) => {
     return res.status(400).json({ message: 'Username ve wallet gerekli' });
   }
 
-  // Orijinal Regex ve Uzunluk Kontrolü
   const cleanUsername = username.startsWith('@') ? username.slice(1) : username.trim();
   if (cleanUsername.length < 1 || cleanUsername.length > 15 || !/^[a-zA-Z0-9_]+$/.test(cleanUsername)) {
     return res.status(400).json({ message: 'Geçersiz X kullanıcı adı' });
   }
 
-  // Şimdilik başarılı dönüyoruz (İleride API eklenebilir)
   res.json({ success: true });
 });
 
@@ -50,7 +50,6 @@ app.post('/save-tasks', async (req, res) => {
   }
 
   try {
-    // db.js üzerinden gelen pool'u kullanıyoruz
     await pool.query(
       `INSERT INTO airdrop_tasks (wallet, tasks) 
        VALUES ($1, $2) 
@@ -58,7 +57,6 @@ app.post('/save-tasks', async (req, res) => {
       [wallet.toLowerCase(), tasks]
     );
 
-    // Katılımcı sayısını artır
     await pool.query(`
       UPDATE airdrop_stats 
       SET participants = participants + 1, 
@@ -106,7 +104,6 @@ app.get('/airdrop-stats', async (req, res) => {
 app.post('/notify-claim', async (req, res) => {
   const { wallet } = req.body;
   console.log('CLAIM BİLDİRİMİ:', wallet);
-  // Buraya ileride bot.js'den bir fonksiyon çağırıp Telegram bildirimi ekleyebiliriz
   res.json({ success: true });
 });
 
@@ -117,47 +114,44 @@ app.get('/', (req, res) => {
 
 // ====================== SUNUCU BAŞLATMA ======================
 const server = app.listen(PORT, async () => {
-  // Önce Veritabanı Tablolarını Kontrol Et (db.js'den gelir)
+  // Önce Veritabanı Tablolarını Kontrol Et
   await initDB();
   
   console.log(`SKYL backend (PostgreSQL) running on ${PORT}`);
   
-  // ==> SİSTEMLERİ TEK NOKTADAN BAŞLAT (BuyBot + Telegram)
+  // ==> MEVCUT SİSTEMLERİ BAŞLAT (BuyBot + Telegram)
   console.log("🚀 Skyline Logic Sistemleri Başlatılıyor...");
   startSkylineSystem();
+
+  // ==> YENİ: HYPER LOGIC AI SİSTEMİNİ BAŞLAT (Sentiment Analiz)
+  console.log("🧠 Hyper Logic AI Modülü Devreye Alınıyor...");
+  startSentimentLoop();
 });
 
 // ============================================================
-//        GRACEFUL SHUTDOWN (ZOMBİ BOTLARI ÖNLEME)
+//        GRACEFUL SHUTDOWN
 // ============================================================
-// Render yeni deploy yaparken eskisini kapatmak için bu sinyalleri gönderir.
-// Bunu dinlemezsek eski bot kapanmaz ve '409 Conflict' hatası verir.
-
 const gracefulShutdown = (signal) => {
   console.log(`[server.js] ${signal} sinyali alındı. Sistem güvenli kapatılıyor...`);
   
   server.close(() => {
     console.log('[server.js] HTTP sunucusu kapatıldı.');
     
-    // Veritabanı bağlantısını nazikçe kes
     pool.end(() => {
       console.log('[server.js] Veritabanı bağlantısı kapatıldı.');
-      process.exit(0); // İşlemi tamamen bitir
+      process.exit(0);
     });
   });
 
-  // Eğer 5 saniye içinde kapanmazsa zorla kapat (Force Kill)
   setTimeout(() => {
     console.error('[server.js] Kapanma zaman aşımı. Zorla kapatılıyor.');
     process.exit(1);
   }, 5000);
 };
 
-// Sinyalleri Dinle
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Beklenmedik Hata Yakalama
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
 });
