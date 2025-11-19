@@ -1,12 +1,12 @@
 /* ==========================
-   Skyline Logic Airdrop v1.4 (Stable Mobile Flow)
+   Skyline Logic Airdrop v1.5 (Stable Mobile Flow)
    ========================== */
 
 // ---------- Config ----------
 const DEV_MODE = false;
 
 // Backend (Render)
-const NODE_SERVER_URL = "https://skyairdropbackend.onrender.com";
+const NODE_SERVER_URL = "https://skyairdropbackend-1.onrender.com";
 
 // X Tweet ID (GÜNCELLENDİ - Gerçek ID'niz)
 const AIRDROP_TWEET_ID = "1983278116723392817";
