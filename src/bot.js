@@ -1,4 +1,4 @@
-// src/bot.js (v24.0 – FINAL ULTIMATE: Axios + GPT-4o-mini + Advanced Security + Crash Proof)
+// src/bot.js (v24.1 – FINAL ULTRA STABLE: Axios + GPT-4o-mini + Advanced Security + Crash Proof)
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import OpenAI from "openai";
@@ -23,6 +23,7 @@ const IMG_WELCOME = "https://skyl.online/images/Skyhawk_Welcome.png";
 const IMG_RAID = "https://skyl.online/images/Skyhawk_Raid.png";
 const IMG_GOODBYE = "https://skyl.online/images/Skyhawk_Goodbye.png";
 const IMG_DEFAULT_BUY = "https://skyl.online/images/Skyhawk_Buy.png";
+const IMG_AIRDROP = "https://skyl.online/images/Skyhawk_Airdrop.png";
 
 // --- AI BAŞLATMA ---
 let openai = null;
@@ -42,12 +43,12 @@ const SPAM_LIMIT_SECONDS = 3;
 
 // --- BOT NESNESİ + POLLING DURUMU ---
 let bot = null;
-let pollingStarted = false; // v24: Aynı process içinde çift polling’i engellemek için
+let pollingStarted = false; // Aynı process içinde çift polling’i engellemek için
 
 if (!TOKEN) {
-  console.warn("[bot.js] UYARI: Telegram Token eksik!");
+  console.warn("[bot.js] UYARI: TELEGRAM_BOT_TOKEN eksik!");
 } else {
-  // Çakışma önlemi: Polling false başlar, startTelegramBot açar
+  // Çakışma önlemi: Polling false başlar, startTelegramBot fonksiyonu açar
   bot = new TelegramBot(TOKEN, {
     polling: false,
     request: { agentOptions: { keepAlive: true, family: 4 } },
@@ -57,11 +58,11 @@ if (!TOKEN) {
 
 // --- YARDIMCI FONKSİYONLAR ---
 
-// HTML Temizleme
+// HTML Temizleme (XSS benzeri saldırılara karşı)
 const escape = (str) =>
   String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// Spam Kontrol
+// Spam Kontrol (kullanıcı başına basit cooldown)
 const checkSpam = (userId) => {
   const currentTime = Date.now();
   if (userCooldowns.has(userId)) {
@@ -72,9 +73,9 @@ const checkSpam = (userId) => {
   return false;
 };
 
-// Gelişmiş FUD Kontrolü
+// Gelişmiş FUD Kontrolü (boşluk ve özel karakterleri normalize eder)
 const isFud = (text) => {
-  const normalized = text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalized = text.toLowerCase().replace(/[^a-z0-9]/g, ""); // "s c a m" -> "scam"
   const fudWords = [
     "scam",
     "rug",
@@ -87,7 +88,7 @@ const isFud = (text) => {
   return fudWords.some((w) => normalized.includes(w));
 };
 
-// Rank Güncelleme
+// Rank Güncelleme (user_ranks tablosu: user_id TEXT PRIMARY KEY varsayılır)
 const updateRank = async (userId, firstName, username) => {
   try {
     const displayName = username || firstName || "User";
@@ -130,13 +131,13 @@ export const startTelegramBot = async () => {
   if (!bot) return;
 
   try {
+    // Webhook temizliği çakışmaları önler
     await bot.deleteWebHook();
     console.log("[bot.js] Webhook temizlendi.");
 
+    // Aynı process içinde ikinci kez polling başlatmayı engelle
     if (pollingStarted) {
-      console.log(
-        "[bot.js] Polling zaten başlatılmış, tekrar başlatma denemesi yok."
-      );
+      console.log("[bot.js] Polling zaten aktif, tekrar başlatılmadı.");
       return;
     }
 
@@ -144,9 +145,9 @@ export const startTelegramBot = async () => {
     pollingStarted = true;
     console.log("[bot.js] ✅ Polling Başarıyla Başlatıldı.");
   } catch (error) {
-    if (error.code === "ETELEGRAM" && error.message.includes("409")) {
+    if (error.code === "ETELEGRAM" && error.message?.includes("409")) {
       console.warn(
-        "[bot.js] ⚠️ 409 Conflict: Başka bir instance bu token ile polling yapıyor."
+        "[bot.js] ⚠️ 409 Conflict: Başka bir bot instance'ı aynı token ile polling yapıyor (muhtemelen eski deploy)."
       );
     } else {
       console.error("[bot.js] Başlatma Hatası:", error.message);
@@ -183,7 +184,7 @@ if (bot) {
     bot.sendMessage(msg.chat.id, helpMsg, { parse_mode: "Markdown" });
   });
 
-  // 2. /stats KOMUTU
+  // 2. /stats KOMUTU (Axios + Null Check + Crash Koruması)
   bot.onText(/\/stats/, async (msg) => {
     if (checkSpam(msg.from.id)) return;
     const chatId = msg.chat.id;
@@ -191,12 +192,16 @@ if (bot) {
 
     try {
       let pair = null;
+
+      // A. Pair Address ile dene
       if (pairAddress) {
         const res1 = await axios.get(
           `https://api.dexscreener.com/latest/dex/pairs/bsc/${pairAddress}`
         );
         if (res1.data.pairs && res1.data.pairs[0]) pair = res1.data.pairs[0];
       }
+
+      // B. Token Address ile dene
       if (!pair) {
         const res2 = await axios.get(
           `https://api.dexscreener.com/latest/dex/tokens/${TOKEN_CA}`
@@ -277,7 +282,7 @@ if (bot) {
     }
   });
 
-  // 4. /ask KOMUTU + Offline Fallback
+  // 4. /ask KOMUTU + Offline Fallback + GPT-4o-mini
   bot.onText(/\/ask (.+)/, async (msg, match) => {
     if (checkSpam(msg.from.id)) return;
     const question = match[1];
@@ -390,7 +395,7 @@ if (bot) {
     });
   });
 
-  // 6. ADMIN: RAID
+  // 6. ADMIN: RAID (Twitter/X link validation + admin kontrolü)
   bot.onText(/\/raid (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -423,7 +428,7 @@ if (bot) {
     }
   });
 
-  // 7. ADMIN: ANNOUNCE
+  // 7. ADMIN: ANNOUNCE (Regex: /announce <mesaj>)
   bot.onText(/\/announce(?:\s+([\s\S]+))?/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -454,7 +459,7 @@ if (bot) {
     }
   });
 
-  // 8. MESAJ DİNLEYİCİSİ (FUD + Rank)
+  // 8. MESAJ DİNLEYİCİSİ (FUD + Rank + Keyword)
   bot.on("message", async (msg) => {
     if (!msg.text || msg.text.startsWith("/") || msg.from.is_bot) return;
 
@@ -466,6 +471,7 @@ if (bot) {
 
     const text = msg.text;
 
+    // FUD Kontrol
     if (isFud(text)) {
       bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
       bot.sendMessage(
@@ -484,9 +490,10 @@ if (bot) {
     }
   });
 
-  // 9. HOŞ GELDİN + CAPTCHA
+  // 9. HOŞ GELDİN + CAPTCHA (Permissions + '|' separator + memory cleanup)
   bot.on("new_chat_members", async (msg) => {
     const chatId = msg.chat.id;
+
     for (const member of msg.new_chat_members) {
       if (member.is_bot) continue;
 
@@ -525,13 +532,14 @@ if (bot) {
         reply_markup: { inline_keyboard: [opts] },
       });
 
-      captchaPending.set(member.id.toString(), sent.message_id);
+      const key = member.id.toString();
+      captchaPending.set(key, sent.message_id);
+
       setTimeout(() => {
-        const key = member.id.toString();
         if (captchaPending.has(key)) {
           bot.deleteMessage(chatId, sent.message_id).catch(() => {});
           captchaPending.delete(key);
-          // Kullanıcı restricted kalır; istersen burada kick de edebilirsin.
+          // İstersek burada verify olmayanı kick de edebiliriz.
         }
       }, 60000);
     }
@@ -539,9 +547,11 @@ if (bot) {
 
   // 10. CAPTCHA DOĞRULAMA
   bot.on("callback_query", async (q) => {
-    if (!q.data || !q.data.startsWith("cap")) return;
+    if (!q.data || !q.data.startsWith("cap|")) return;
 
     const parts = q.data.split("|");
+    if (parts.length < 3) return;
+
     const status = parts[1];
     const id = parts[2];
 
@@ -576,7 +586,8 @@ if (bot) {
       await bot.answerCallbackQuery(q.id, { text: "Verified!" });
       bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
 
-      captchaPending.delete(id);
+      // Bellek temizliği (string key!)
+      captchaPending.delete(id.toString());
 
       bot.sendMessage(chatId, `✅ Verified! Welcome, ${q.from.first_name}.`, {
         disable_notification: true,
@@ -650,11 +661,10 @@ $SKYL Airdrop Claim!
 <a href="https://bscscan.com/address/${escape(wallet)}">View on BscScan</a>`.trim();
 
   try {
-    await bot.sendPhoto(
-      CHAT_ID,
-      "https://skyl.online/images/Skyhawk_Airdrop.png",
-      { caption: txt, parse_mode: "HTML" }
-    );
+    await bot.sendPhoto(CHAT_ID, IMG_AIRDROP, {
+      caption: txt,
+      parse_mode: "HTML",
+    });
   } catch (e) {
     console.error("Airdrop Alert Error:", e.message);
   }
