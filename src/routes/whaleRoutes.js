@@ -6,9 +6,9 @@ const router = express.Router();
 // GET /api/whales
 router.get('/whales', async (req, res) => {
   try {
-    // En son yakalanan 50 balina hareketini getir
+    // Son 20 işlemi getir
     const result = await pool.query(
-      'SELECT * FROM whale_alerts ORDER BY created_at DESC LIMIT 50'
+      'SELECT * FROM whale_alerts ORDER BY created_at DESC LIMIT 20'
     );
     res.json(result.rows);
   } catch (error) {
