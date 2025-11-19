@@ -7,7 +7,7 @@ const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_ABI = ["event Transfer(address indexed from, address indexed to, uint value)"];
 
 // Balina Eşiği: 10 BNB
-const WHALE_THRESHOLD = 10.0; 
+const WHALE_THRESHOLD = 1000.0; 
 let isWatching = false;
 
 // 1. OTOMATİK TABLO KURULUMU
