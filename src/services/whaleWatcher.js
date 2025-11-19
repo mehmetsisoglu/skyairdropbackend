@@ -2,18 +2,44 @@ import { ethers } from 'ethers';
 import { pool } from '../db.js';
 import 'dotenv/config';
 
-// WBNB Kontrat Adresi (BSC Ağı)
+// WBNB Kontrat Adresi (BSC)
 const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_ABI = ["event Transfer(address indexed from, address indexed to, uint value)"];
 
-// Eşik Değer: 10 BNB ve üzeri (Yaklaşık $6,000+)
+// Balina Eşiği: 10 BNB
 const WHALE_THRESHOLD = 10.0; 
 let isWatching = false;
 
+// 1. OTOMATİK TABLO KURULUMU
+async function ensureWhaleTableExists() {
+  const query = `
+    CREATE TABLE IF NOT EXISTS whale_alerts (
+      id SERIAL PRIMARY KEY,
+      tx_hash VARCHAR(255) UNIQUE,
+      from_address VARCHAR(255),
+      to_address VARCHAR(255),
+      amount DECIMAL(18, 2),
+      amount_usd DECIMAL(18, 2),
+      token_symbol VARCHAR(10) DEFAULT 'BNB',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  try {
+    await pool.query(query);
+    console.log('✅ [Database] Balina tablosu kontrol edildi/hazır.');
+  } catch (err) {
+    console.error('❌ [Database] Tablo oluşturma hatası:', err.message);
+  }
+}
+
+// 2. BALINA AVCISI
 export async function startWhaleWatcher() {
   if (isWatching) return;
+
+  // Önce tabloyu garantiye al
+  await ensureWhaleTableExists();
   
-  // Public WSS (Websocket) Adresi - BSC için
+  // Public BSC Node (Websocket)
   const providerUrl = "wss://bsc-rpc.publicnode.com"; 
   
   console.log("🐋 Balina Avcısı Başlatılıyor...");
@@ -24,19 +50,18 @@ export async function startWhaleWatcher() {
 
     isWatching = true;
 
-    // Transfer olayını dinle
     contract.on("Transfer", async (from, to, value, event) => {
       try {
         const amountBNB = parseFloat(ethers.formatEther(value));
 
-        // Sadece büyük balıkları yakala
+        // Eşik kontrolü
         if (amountBNB >= WHALE_THRESHOLD) {
           const txHash = event.log.transactionHash;
-          const estUsd = amountBNB * 620; // Tahmini BNB fiyatı ($620)
+          const estUsd = amountBNB * 620; // Sabit kur (ileride API bağlanabilir)
 
-          console.log(`🐋 WHALE ALERT: ${amountBNB.toFixed(2)} BNB yakalandı!`);
+          console.log(`🐋 WHALE ALERT: ${amountBNB.toFixed(2)} BNB`);
 
-          // Veritabanına kaydet
+          // DB Kayıt
           await pool.query(
             `INSERT INTO whale_alerts (tx_hash, from_address, to_address, amount, amount_usd)
              VALUES ($1, $2, $3, $4, $5)
@@ -49,19 +74,18 @@ export async function startWhaleWatcher() {
       }
     });
 
-    console.log(`✅ Balina Avcısı Aktif (Eşik: ${WHALE_THRESHOLD} BNB)`);
+    console.log(`✅ Balina Takibi Aktif (Limit: ${WHALE_THRESHOLD} BNB)`);
 
-    // Bağlantı koparsa yeniden bağlan
+    // Bağlantı koparsa
     provider.websocket.on("close", () => {
-        console.log("⚠️ WSS Koptu, yeniden bağlanılıyor...");
+        console.log("⚠️ WSS Bağlantısı koptu, tekrar bağlanılıyor...");
         isWatching = false;
         setTimeout(startWhaleWatcher, 5000);
     });
 
   } catch (error) {
-    console.error("❌ Balina Servisi Başlatılamadı:", error.message);
+    console.error("❌ Balina Servisi Hatası:", error.message);
     isWatching = false;
-    // 10 saniye sonra tekrar dene
     setTimeout(startWhaleWatcher, 10000);
   }
 }
