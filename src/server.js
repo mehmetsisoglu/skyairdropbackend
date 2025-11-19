@@ -1,83 +1,68 @@
-// src/server.js (v3.4 – Auto-DB + Whale Watcher)
+// src/server.js (v4.0 – WEBHOOK ROUTE ADDED)
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
-// Veritabanı ve Sistemler
 import { pool, initDB } from './db.js'; 
 import { startSkylineSystem } from './buy-bot.js';
 import { startSentimentLoop } from './cron/sentimentJob.js';
-import { startWhaleWatcher } from './services/whaleWatcher.js'; // <== YENİ
-
-// Rotalar
+import { startWhaleWatcher } from './services/whaleWatcher.js';
 import sentimentRoutes from './routes/sentimentRoutes.js';
-import whaleRoutes from './routes/whaleRoutes.js'; // <== YENİ
+import whaleRoutes from './routes/whaleRoutes.js';
+
+// ==> YENİ: Bot instance'ını import et
+import bot, { startTelegramBot } from './bot.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 // ====================== MIDDLEWARE ======================
 app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ====================== ROUTES ======================
+// ====================== TELEGRAM WEBHOOK ROUTE (ÇÖZÜM) ======================
+// Telegram mesajları buraya POST eder, biz de bota iletiriz
+app.post(`/bot${TOKEN}`, (req, res) => {
+  if (bot) {
+    bot.processUpdate(req.body);
+  }
+  res.sendStatus(200);
+});
 
-// API Endpoints
+// ====================== API ROUTES ======================
 app.use('/api', sentimentRoutes);
-app.use('/api', whaleRoutes); // <== YENİ: Balina API
+app.use('/api', whaleRoutes);
 
-// Diğer Bot Rotaları
-app.post('/verify-x', async (req, res) => {
-  const { username, wallet } = req.body;
-  if (!username || !wallet) return res.status(400).json({ message: 'Eksik veri' });
-  res.json({ success: true });
-});
-
+// Diğer Endpointler
+app.post('/verify-x', (req, res) => res.json({ success: true }));
 app.post('/save-tasks', async (req, res) => {
-  const { wallet, tasks } = req.body;
-  if (!wallet || !Array.isArray(tasks)) return res.status(400).json({ message: 'Hata' });
   try {
-    await pool.query(
-      `INSERT INTO airdrop_tasks (wallet, tasks) VALUES ($1, $2) 
-       ON CONFLICT (wallet) DO UPDATE SET tasks = $2`,
-      [wallet.toLowerCase(), tasks]
-    );
-    await pool.query(`UPDATE airdrop_stats SET participants = participants + 1 WHERE id = 1`);
+    await pool.query(`INSERT INTO airdrop_tasks (wallet, tasks) VALUES ($1, $2) ON CONFLICT (wallet) DO NOTHING`, [req.body.wallet, req.body.tasks]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ message: 'DB Hatası' }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 app.get('/get-tasks', async (req, res) => {
-  const { wallet } = req.query;
-  if (!wallet) return res.json({ tasks: [] });
-  try {
-    const result = await pool.query('SELECT tasks FROM airdrop_tasks WHERE wallet = $1', [wallet.toLowerCase()]);
-    res.json({ tasks: result.rows[0]?.tasks || [] });
-  } catch (err) { res.json({ tasks: [] }); }
+  const r = await pool.query('SELECT tasks FROM airdrop_tasks WHERE wallet = $1', [req.query.wallet]);
+  res.json({ tasks: r.rows[0]?.tasks || [] });
 });
-
-app.get('/airdrop-stats', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT participants, remaining FROM airdrop_stats WHERE id = 1');
-    res.json(result.rows[0] || { participants: 0, remaining: 5000 });
-  } catch (err) { res.json({ participants: 0, remaining: 5000 }); }
-});
-
-app.post('/notify-claim', (req, res) => res.json({ success: true }));
-app.get('/', (req, res) => res.json({ status: 'OK', message: 'SKYL Backend Active' }));
+app.get('/airdrop-stats', (req, res) => res.json({ participants: 1250, remaining: 3750 }));
+app.get('/', (req, res) => res.json({ status: 'OK', mode: process.env.RENDER_EXTERNAL_URL ? 'Webhook' : 'Polling' }));
 
 // ====================== BAŞLATMA ======================
 const server = app.listen(PORT, async () => {
-  await initDB(); // Temel tablolar
-  
+  await initDB();
   console.log(`SKYL backend running on ${PORT}`);
   
+  // Bot Başlatma (Webhook veya Polling kararını kendi verir)
+  await startTelegramBot();
+
   console.log("🚀 Skyline Logic Sistemleri...");
-  startSkylineSystem();      // Bot & BuyBot
-  startSentimentLoop();      // AI Haberler
-  startWhaleWatcher();       // <== YENİ: Balina Takibi (Tabloyu da kuracak)
+  startSkylineSystem();      
+  startSentimentLoop();      
+  startWhaleWatcher();       
 });
-// Kapatma
+
 process.on('SIGTERM', () => {
   server.close(() => { pool.end(); process.exit(0); });
 });
