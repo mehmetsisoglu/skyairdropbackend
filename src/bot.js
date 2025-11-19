@@ -1,53 +1,57 @@
-// src/bot.js (v19.0 – FINAL STABLE: Stats Fix + Rank Fix + All Features)
+// src/bot.js (v21.0 – THE COMPLETE SYSTEM: All Features, No Compromises)
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import OpenAI from "openai"; 
-import { pool } from "./db.js"; // Veritabanı bağlantısı
+import { pool } from "./db.js"; // Rank sistemi için veritabanı
 
 dotenv.config();
 
+// --- API ANAHTARLARI VE AYARLAR ---
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim();
 const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID?.trim();
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
-// --- CONFIGURATION ---
+// --- PROJE BİLGİLERİ ---
 const TOKEN_CA = "0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c"; 
 const BUY_LINK = "https://pancakeswap.finance/swap?outputCurrency=" + TOKEN_CA;
 const WEBSITE = "https://skyl.online/";
 const AIRDROP_PAGE = "https://skyl.online/airdrop/";
 
-// --- IMAGES ---
+// --- GÖRSELLER (Skyhawk Serisi) ---
 const IMG_WELCOME = "https://skyl.online/images/Skyhawk_Welcome.png"; 
 const IMG_RAID = "https://skyl.online/images/Skyhawk_Raid.png";
 const IMG_GOODBYE = "https://skyl.online/images/Skyhawk_Goodbye.png";
 
-// --- AI SETUP ---
+// --- AI BAŞLATMA (Hata Korumalı) ---
 let openai = null;
 if (OPENAI_KEY) {
     try {
         openai = new OpenAI({ apiKey: OPENAI_KEY });
-        console.log("[bot.js] OpenAI Enabled.");
-    } catch (e) { console.error("OpenAI Init Error:", e.message); }
+        console.log("[bot.js] OpenAI (ChatGPT) Aktif.");
+    } catch (e) { 
+        console.error("[bot.js] OpenAI Başlatılamadı:", e.message); 
+    }
 }
 
-// --- MEMORY & LIMITS ---
+// --- HAFIZA VE LİMİTLER ---
 const userCooldowns = new Map();
 const captchaPending = new Map(); 
-const SPAM_LIMIT_SECONDS = 4;
+const SPAM_LIMIT_SECONDS = 3; // 3 Saniye spam limiti
 
+// --- BOT NESNESİ OLUŞTURMA ---
 let bot = null;
-
 if (!TOKEN) {
-  console.warn("[bot.js] Token missing! Bot could not start.");
+  console.warn("[bot.js] UYARI: Telegram Token eksik!");
 } else {
-  // ⚠️ POLLING FALSE: Başlangıçta kapalı (buy-bot.js başlatacak)
+  // ⚠️ ÇAKIŞMA ÖNLEMİ: Polling başlangıçta KAPALI. (buy-bot.js açacak)
   bot = new TelegramBot(TOKEN, { polling: false }); 
-  console.log("[bot.js] Bot instance created (Idle Mode).");
+  console.log("[bot.js] Bot nesnesi oluşturuldu (Beklemede).");
 }
 
+// HTML Karakterlerini Temizleme (Güvenlik)
 const escape = (str) => String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// --- SPAM CHECK ---
+// --- SPAM KONTROL FONKSİYONU ---
 const checkSpam = (userId) => {
     const currentTime = Date.now();
     if (userCooldowns.has(userId)) {
@@ -58,66 +62,67 @@ const checkSpam = (userId) => {
     return false;
 };
 
-// --- RANK SYSTEM: UPDATE XP ---
+// --- RANK SİSTEMİ: XP GÜNCELLEME ---
 const updateRank = async (userId, username) => {
     try {
-        // Kullanıcı yoksa oluştur, varsa XP artır
-        const res = await pool.query(`
+        // Kullanıcıyı veritabanına ekle veya güncelle
+        await pool.query(`
             INSERT INTO user_ranks (user_id, username, xp, level) 
             VALUES ($1, $2, 1, 'Cadet') 
             ON CONFLICT (user_id) DO UPDATE 
             SET xp = user_ranks.xp + 1, username = $2
-            RETURNING xp
         `, [userId, username || 'User']);
 
-        const xp = res.rows[0].xp;
-        let newLevel = 'Cadet';
+        // Güncel XP'yi çek ve Rütbe kontrolü yap
+        const res = await pool.query('SELECT xp FROM user_ranks WHERE user_id = $1', [userId]);
+        const xp = res.rows[0]?.xp || 0;
         
-        // Rütbe Kuralları
+        let newLevel = 'Cadet';
         if (xp > 50) newLevel = 'Pilot ✈️';
         if (xp > 200) newLevel = 'Sky Commander 🦅';
         if (xp > 500) newLevel = 'Legend 🌟';
         if (xp > 1000) newLevel = 'Sky God ⚡';
 
-        // Seviye güncellemesi
+        // Yeni rütbeyi kaydet
         await pool.query('UPDATE user_ranks SET level = $1 WHERE user_id = $2', [newLevel, userId]);
         
     } catch (e) { 
-        // Hata durumunda sessiz kal
+        // Veritabanı hatası olursa konsola yaz ama botu durdurma
+        console.error("Rank Update Error:", e.message); 
     }
 };
 
 // ====================================================
-//       SYSTEM STARTUP (Conflict Prevention)
+//       GÜVENLİ BAŞLATMA (CONFLICT FIX)
 // ====================================================
 export const startTelegramBot = async () => {
     if (!bot) return;
     
     try {
-        // Eski webhook varsa temizle
+        // 1. Eski webhook varsa sil (Temiz sayfa)
         await bot.deleteWebHook();
-        console.log("[bot.js] Webhook cleared.");
+        console.log("[bot.js] Webhook temizlendi.");
 
-        // Polling'i manuel başlat
+        // 2. Polling'i manuel başlat
         if (!bot.isPolling()) {
             await bot.startPolling();
-            console.log("[bot.js] ✅ Polling Started Successfully.");
+            console.log("[bot.js] ✅ Polling Başarıyla Başlatıldı.");
         }
     } catch (error) {
         if (error.code === 'ETELEGRAM' && error.message.includes('409')) {
-             console.warn("[bot.js] ⚠️ Conflict detected (Another instance running).");
+             console.warn("[bot.js] ⚠️ Çakışma algılandı (Başka bir kopya çalışıyor olabilir).");
         } else {
-             console.error("[bot.js] Startup Error:", error.message);
+             console.error("[bot.js] Başlatma Hatası:", error.message);
         }
     }
 };
 
 // ====================================================
-//           COMMANDS & LOGIC
+//           KOMUTLAR VE MANTIK
 // ====================================================
 if (bot) {
     
-    // 1. /help COMMAND
+    // 1. /help KOMUTU (Menü)
     bot.onText(/\/help/, (msg) => {
         if (checkSpam(msg.from.id)) return;
         const helpMsg = `
@@ -142,19 +147,33 @@ if (bot) {
         bot.sendMessage(msg.chat.id, helpMsg, { parse_mode: 'Markdown' });
     });
 
-    // 2. /stats COMMAND (FIXED: Uses PAIR ADDRESS)
+    // 2. /stats KOMUTU (Gelişmiş: Çifte Kontrol)
     bot.onText(/\/stats/, async (msg) => {
         if (checkSpam(msg.from.id)) return;
         const chatId = msg.chat.id;
         const pairAddress = process.env.PANCAKESWAP_PAIR_ADDRESS;
 
         try {
-            // DexScreener Pair Endpoint kullanılıyor (Daha güvenilir)
-            const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/bsc/${pairAddress}`);
-            const data = await res.json();
-            const pair = data.pair || (data.pairs && data.pairs[0]);
+            let pair = null;
+            
+            // A. Önce Pair Adresi ile dene (En garantisi)
+            if (pairAddress) {
+                const res1 = await fetch(`https://api.dexscreener.com/latest/dex/pairs/bsc/${pairAddress}`);
+                const data1 = await res1.json();
+                if (data1.pairs && data1.pairs[0]) pair = data1.pairs[0];
+            }
 
-            if (!pair) return bot.sendMessage(chatId, "⚠️ *Data Not Found:* Liquidity might be low or API is syncing.", { parse_mode: 'Markdown' });
+            // B. Bulamazsa Token Adresi ile dene (Yedek)
+            if (!pair) {
+                const res2 = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${TOKEN_CA}`);
+                const data2 = await res2.json();
+                if (data2.pairs && data2.pairs[0]) pair = data2.pairs[0];
+            }
+
+            // C. Hiçbiri yoksa hata ver
+            if (!pair) {
+                return bot.sendMessage(chatId, "⚠️ *Data Not Found:* Liquidity might be low or DexScreener is syncing.", { parse_mode: 'Markdown' });
+            }
 
             const statsMsg = `
 📊 *Skyline Logic ($SKYL) Live Stats*
@@ -168,39 +187,46 @@ if (bot) {
 🔗 [View on DexScreener](${pair.url})
             `;
             bot.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown', disable_web_page_preview: true });
+
         } catch (e) {
-            console.error("Stats Error:", e);
+            console.error("Stats API Error:", e);
             bot.sendMessage(chatId, "⚠️ Market data service unavailable.");
         }
     });
 
-    // 3. /rank COMMAND (FIXED: Uses String ID)
+    // 3. /rank KOMUTU (Düzeltilmiş: ID String)
     bot.onText(/\/rank/, async (msg) => {
         if (checkSpam(msg.from.id)) return;
         
-        // FIX: ID string'e çevrildi
+        // FIX: ID'yi String'e çeviriyoruz (DB Hatası önlemi)
         const userId = msg.from.id.toString();
 
         try {
             const res = await pool.query('SELECT * FROM user_ranks WHERE user_id = $1', [userId]);
-            if (res.rows.length === 0) return bot.sendMessage(msg.chat.id, "You have no rank yet. Start chatting!");
+            
+            if (res.rows.length === 0) {
+                // Kayıt yoksa o an oluştur
+                await updateRank(userId, msg.from.first_name);
+                return bot.sendMessage(msg.chat.id, "🆕 Profile created! Type /rank again to see stats.");
+            }
             
             const { xp, level } = res.rows[0];
             bot.sendMessage(msg.chat.id, `🎖 *Your Rank Card*\n\n👤 User: ${msg.from.first_name}\n🔰 Level: *${level}*\n✨ XP: *${xp}*`, { parse_mode: 'Markdown' });
+
         } catch (e) { 
-            // Hata durumunda log bas ama kullanıcıya yansıtma
             console.error("Rank Cmd Error:", e.message);
             bot.sendMessage(msg.chat.id, "⚠️ Database is waking up. Try again in 1 min."); 
         }
     });
 
-    // 4. /ask COMMAND (AI)
+    // 4. /ask KOMUTU (Yapay Zeka)
     bot.onText(/\/ask (.+)/, async (msg, match) => {
         if (checkSpam(msg.from.id)) return;
         const question = match[1];
         const chatId = msg.chat.id;
 
         if (openai) {
+            // --- OPENAI AKTİF ---
             bot.sendChatAction(chatId, 'typing');
             try {
                 const completion = await openai.chat.completions.create({
@@ -215,6 +241,7 @@ if (bot) {
                 bot.sendMessage(chatId, "⚠️ AI Brain overload. Try again later.");
             }
         } else {
+            // --- YEDEK PLAN (Statik Cevaplar) ---
             const aiKnowledgeBase = [
                 { keys: ["contract", "ca"], answer: `Contract: \`${TOKEN_CA}\`` },
                 { keys: ["buy", "pancake"], answer: `Buy here: [Link](${BUY_LINK})` },
@@ -226,7 +253,7 @@ if (bot) {
         }
     });
 
-    // 5. STANDARD COMMANDS
+    // 5. TEMEL KOMUTLAR
     bot.onText(/\/ca/, (msg) => {
         if (checkSpam(msg.from.id)) return;
         bot.sendMessage(msg.chat.id, `💎 *Contract:* \`${TOKEN_CA}\`\n_(Tap to copy)_`, { parse_mode: 'Markdown' });
@@ -285,7 +312,7 @@ if (bot) {
         } catch (e) {}
     });
 
-    // 7. MESSAGE LISTENER (XP + Auto-Mod)
+    // 7. MESAJ DİNLEYİCİSİ (XP + FUD Koruması)
     bot.on('message', async (msg) => {
         // Komutları ve botları yoksay
         if (!msg.text || msg.text.startsWith('/') || msg.from.is_bot) return;
@@ -293,24 +320,29 @@ if (bot) {
         // FIX: ID string'e çevrildi
         await updateRank(msg.from.id.toString(), msg.from.username || msg.from.first_name);
 
-        // Auto-Mod
+        // FUD Check
         const text = msg.text.toLowerCase();
         if (["scam", "rug", "honeypot", "fake"].some(w => text.includes(w))) {
              bot.deleteMessage(msg.chat.id, msg.message_id).catch(()=>{});
              bot.sendMessage(msg.chat.id, "🚫 *No FUD allowed!* Trust the Logic.", { parse_mode: 'Markdown' });
         }
+        
+        // Hype Check
         if (text.includes("moon") || text.includes("lambo")) {
              bot.sendMessage(msg.chat.id, "🚀 *To the Sky!* $SKYL taking off.", { parse_mode: 'Markdown' });
         }
     });
 
-    // 8. WELCOME + CAPTCHA
+    // 8. HOŞ GELDİN + CAPTCHA
     bot.on('new_chat_members', async (msg) => {
         const chatId = msg.chat.id;
         for (const member of msg.new_chat_members) {
             if (member.is_bot) continue;
+            
+            // 1. Sustur
             try { await bot.restrictChatMember(chatId, member.id, { can_send_messages: false }); } catch (e) {}
 
+            // 2. Soru Hazırla
             const n1 = Math.floor(Math.random()*5)+1, n2 = Math.floor(Math.random()*5)+1;
             const ans = n1+n2;
             const opts = [
@@ -318,17 +350,20 @@ if (bot) {
                 { text: `${n1}+${n2}=${ans+1}`, callback_data: `cap_no_${member.id}` }
             ].sort(()=>Math.random()-0.5);
 
+            // 3. Karşılama Mesajı
             const sent = await bot.sendPhoto(chatId, IMG_WELCOME, {
                 caption: `👋 *Welcome, ${member.first_name}!*\n\nTo chat in *Skyline Logic*, please prove you are human.\n*Solve:* ${n1} + ${n2} = ?`,
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: [opts] }
             });
+            
+            // 4. Süre Sayacı
             captchaPending.set(member.id, sent.message_id);
             setTimeout(()=>{ if(captchaPending.has(member.id)) bot.deleteMessage(chatId, sent.message_id).catch(()=>{}); }, 60000);
         }
     });
 
-    // 9. CAPTCHA CALLBACK
+    // 9. CAPTCHA DOĞRULAMA
     bot.on('callback_query', async (q) => {
         const [type, status, id] = q.data.split('_'); 
         if (type !== 'cap') return;
@@ -347,7 +382,7 @@ if (bot) {
         }
     });
 
-    // 10. GOODBYE MESSAGE
+    // 10. VEDA MESAJI
     bot.on('left_chat_member', async (msg) => {
         const chatId = msg.chat.id;
         const leftMember = msg.left_chat_member;
@@ -367,7 +402,7 @@ We hope to see you flying with us again.
 }
 
 // ====================================================
-//             EXPORTS (NOTIFICATION SYSTEM)
+//             DIŞA AKTARILAN BİLDİRİMLER (BuyBot için)
 // ====================================================
 export const sendBuyDetected = async (amountSKYL, costWBNB, wallet, txHash, imageURL) => {
   if (!bot || !CHAT_ID) return;
