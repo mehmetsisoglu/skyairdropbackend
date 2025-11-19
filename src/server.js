@@ -1,12 +1,14 @@
-// src/server.js (v3.1 – Hyper Logic AI Entegre Edildi)
+// src/server.js (v3.2 – Hyper Logic AI + Sentiment API Entegre)
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
 // Veritabanı ve Bot başlatıcıyı dışarıdan alıyoruz
 import { pool, initDB } from './db.js'; 
 import { startSkylineSystem } from './buy-bot.js';
-// YENİ: Sentiment Analiz Modülü (Hyper Logic AI)
+// Sentiment Analiz Modülleri (Hyper Logic AI)
 import { startSentimentLoop } from './cron/sentimentJob.js';
+// ==> EKLENEN 1: Rota dosyasını içe aktar
+import sentimentRoutes from './routes/sentimentRoutes.js'; 
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -21,6 +23,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ====================== ROUTES ======================
+
+// ==> EKLENEN 2: API Kapısını Aç
+// React buradan veri çekecek: https://.../api/sentiment
+app.use('/api', sentimentRoutes);
 
 // 1. X (Twitter) Doğrulama
 app.post('/verify-x', async (req, res) => {
