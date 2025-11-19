@@ -175,7 +175,7 @@ if (bot) {
     // 3. /rank COMMAND
     bot.onText(/\/rank/, async (msg) => {
         if (checkSpam(msg.from.id)) return;
-        const userId = msg.from.id;
+        const userId = msg.from.id.toString();
         try {
             const res = await pool.query('SELECT * FROM user_ranks WHERE user_id = $1', [userId]);
             if (res.rows.length === 0) return bot.sendMessage(msg.chat.id, "You have no rank yet. Start chatting!");
@@ -286,7 +286,7 @@ if (bot) {
         if (!msg.text || msg.text.startsWith('/') || msg.from.is_bot) return;
         
         // XP Kazanma
-        await updateRank(msg.from.id, msg.from.username || msg.from.first_name);
+        await updateRank(msg.from.id.toString(), msg.from.username || msg.from.first_name);
 
         // Auto-Mod (FUD Protection)
         const text = msg.text.toLowerCase();
