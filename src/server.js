@@ -1,4 +1,4 @@
-// src/server.js (v5.0 – FINAL STABLE: Webhook & Helmet Security)
+// src/server.js (v5.1 – FINAL PRODUCTION CODE: Webhook & Helmet Security)
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
@@ -8,7 +8,7 @@ import { startSentimentLoop } from './cron/sentimentJob.js';
 import { startWhaleWatcher } from './services/whaleWatcher.js';
 import sentimentRoutes from './routes/sentimentRoutes.js';
 import whaleRoutes from './routes/whaleRoutes.js'; 
-import helmet from 'helmet'; // Güvenlik başlıkları
+import helmet from 'helmet'; 
 
 // Bot instance'ını import et
 import bot, { startTelegramBot } from './bot.js';
@@ -48,13 +48,12 @@ app.post(`/bot${TOKEN}`, (req, res) => {
 
 // ====================== API ROUTES ======================
 app.use('/api', sentimentRoutes);
-app.use('/api', whaleRoutes);
+app.use('/api', whaleRoutes); // Balina API
 
 // Diğer Endpointler
 app.post('/verify-x', (req, res) => res.json({ success: true }));
 app.post('/save-tasks', async (req, res) => {
   try {
-    // Katılımcı sayısını artır
     await pool.query(`INSERT INTO airdrop_tasks (wallet, tasks) VALUES ($1, $2) ON CONFLICT (wallet) DO NOTHING`, [req.body.wallet, req.body.tasks]);
     await pool.query(`UPDATE airdrop_stats SET participants = participants + 1 WHERE id = 1`);
     res.json({ success: true });
