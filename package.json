@@ -8,14 +8,7 @@
     "start": "node src/server.js",
     "dev": "concurrently \"nodemon src/server.js\" \"nodemon src/buy-bot.js\""
   },
-  "keywords": [
-    "airdrop",
-    "crypto",
-    "skylinklogic",
-    "web3",
-    "skyline",
-    "bnb"
-  ],
+  "keywords": ["airdrop", "crypto", "skylinklogic", "web3", "skyline", "bnb"],
   "author": "Mehmet Sisoglu (@SkylineLogicAI)",
   "license": "MIT",
   "dependencies": {
@@ -31,8 +24,8 @@
     "node-telegram-bot-api": "^0.66.0",
     "pg": "^8.16.3",
     "openai": "^4.0.0",
-    "rss-parser": "^3.13.0"
-    "ws": "^8.18.0"
+    "rss-parser": "^3.13.0",
+    "ws": "^8.18.0" 
   },
   "devDependencies": {
     "nodemon": "^3.1.7"
