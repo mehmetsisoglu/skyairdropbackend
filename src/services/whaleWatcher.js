@@ -1,4 +1,4 @@
-// src/services/whaleWatcher.js (Final Fix: BSC_WSS_URL Aligment)
+// src/services/whaleWatcher.js (FINAL WHALE THRESHOLD)
 import { ethers } from 'ethers';
 import { pool } from '../db.js';
 import 'dotenv/config';
@@ -7,8 +7,8 @@ import 'dotenv/config';
 const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_ABI = ["event Transfer(address indexed from, address indexed to, uint value)"];
 
-// Eşik Değeri (Test için 100 BNB)
-const WHALE_THRESHOLD = 100.0; 
+// NİHAİ EŞİK DEĞERİ: 1000 BNB (Yaklaşık $620,000+)
+const WHALE_THRESHOLD = 1000.0; 
 let isWatching = false;
 
 export async function startWhaleWatcher() {
@@ -16,7 +16,7 @@ export async function startWhaleWatcher() {
 
   await ensureWhaleTableExists();
   
-  // KRİTİK DÜZELTME: Artık BuyBot'un kullandığı doğru değişkeni arıyoruz.
+  // Alchemy WSS Bağlantısı
   const providerUrl = process.env.BSC_WSS_URL; 
   
   if (!providerUrl) {
@@ -24,7 +24,7 @@ export async function startWhaleWatcher() {
       return; 
   }
   
-  console.log("🐋 Balina Avcısı Başlatılıyor (Alchemy ile)...");
+  console.log("🐋 Balina Avcısı Başlatılıyor (Nihai Eşik)...");
   
   try {
     const provider = new ethers.WebSocketProvider(providerUrl);
@@ -36,12 +36,14 @@ export async function startWhaleWatcher() {
       try {
         const amountBNB = parseFloat(ethers.formatEther(value));
 
+        // Eşik kontrolü
         if (amountBNB >= WHALE_THRESHOLD) {
           const txHash = event.log.transactionHash;
           const estUsd = amountBNB * 620; 
 
-          console.log(`🐋 TEST WHALE ALERT: ${amountBNB.toFixed(2)} BNB yakalandı!`);
+          console.log(`🐋 MEGA WHALE ALERT: ${amountBNB.toFixed(2)} BNB yakalandı!`);
 
+          // Veritabanına kaydet
           await pool.query(
             `INSERT INTO whale_alerts (tx_hash, from_address, to_address, amount, amount_usd)
              VALUES ($1, $2, $3, $4, $5)
@@ -64,7 +66,7 @@ export async function startWhaleWatcher() {
     });
 
   } catch (error) {
-    console.error("❌ Balina Servisi Başlatılamadı:", error.message);
+    console.error("❌ Balina Servisi Hatası:", error.message);
     isWatching = false;
     setTimeout(startWhaleWatcher, 10000);
   }
