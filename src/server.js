@@ -49,6 +49,16 @@ app.post(`/bot${TOKEN}`, (req, res) => {
 // ====================== API ROUTES ======================
 app.use('/api', sentimentRoutes);
 app.use('/api', whaleRoutes); // Balina API
+// ==> DİKKAT: BU ROTAYI KULLANDIKTAN SONRA HEMEN SİLİN!
+app.get('/api/admin/cleardb', async (req, res) => {
+  try {
+    // 100 BNB'den küçük olan tüm eski gürültüyü siler
+    await pool.query("DELETE FROM whale_alerts WHERE amount < 100.00;");
+    res.status(200).send("Database Cleaned. NOW DELETE THIS ENDPOINT!");
+  } catch (e) {
+    res.status(500).send(`Error cleaning DB: ${e.message}`);
+  }
+});
 
 // Diğer Endpointler
 app.post('/verify-x', (req, res) => res.json({ success: true }));
