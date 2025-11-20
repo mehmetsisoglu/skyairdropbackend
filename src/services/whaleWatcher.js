@@ -1,4 +1,4 @@
-// src/services/whaleWatcher.js (Alchemy WSS ve Test Eşiği)
+// src/services/whaleWatcher.js (Final Fix: BSC_WSS_URL Aligment)
 import { ethers } from 'ethers';
 import { pool } from '../db.js';
 import 'dotenv/config';
@@ -7,7 +7,7 @@ import 'dotenv/config';
 const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_ABI = ["event Transfer(address indexed from, address indexed to, uint value)"];
 
-// YENİ EŞİK DEĞERİ: 100 BNB (Hızlı test ve gerçek balina hareketleri için)
+// Eşik Değeri (Test için 100 BNB)
 const WHALE_THRESHOLD = 100.0; 
 let isWatching = false;
 
@@ -16,11 +16,11 @@ export async function startWhaleWatcher() {
 
   await ensureWhaleTableExists();
   
-  // KRİTİK: Public node yerine, ENV'deki ALCHEMY URL'i kullanıyoruz (Daha Stabil)
-  const providerUrl = process.env.ALCHEMY_WSS_URL; 
+  // KRİTİK DÜZELTME: Artık BuyBot'un kullandığı doğru değişkeni arıyoruz.
+  const providerUrl = process.env.BSC_WSS_URL; 
   
   if (!providerUrl) {
-      console.error("❌ ALCHEMY_WSS_URL ENV DEĞİŞKENİ GEREKLİ!");
+      console.error("❌ BSC_WSS_URL ENV DEĞİŞKENİ GEREKLİ!");
       return; 
   }
   
