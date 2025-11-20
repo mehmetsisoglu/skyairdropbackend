@@ -1,9 +1,11 @@
-// src/server.js (v6.0 - FINAL WEB SOCKET ARCHITECTURE)
+// src/server.js (v6.1 – FINAL WSS FIX)
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
 import helmet from 'helmet';
-import ws from 'ws'; // Yeni WebSocket Kütüphanesi
+
+// KRİTİK DÜZELTME: Sınıfı doğrudan çağırıyoruz
+import { WebSocketServer } from 'ws'; 
 
 import { pool, initDB } from './db.js'; 
 import { startSkylineSystem } from './buy-bot.js';
@@ -19,15 +21,28 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-// ====================== WSS SUNUCUSU TANIMLAMA ======================
-const wss = new ws.Server({ noServer: true }); 
-// WSS sunucusunu dışa aktar ki whaleWatcher kullanabilsin
-export const getWSS = () => wss;
+// ====================== WSS SUNUCUSU TANIMLAMA (FIX) ======================
+// Artık direkt sınıfı çağırıyoruz.
+const wss = new WebSocketServer({ noServer: true }); 
 
-// ... (MIDDLEWARE ve API ROTLARI aynı kalır) ...
+// ====================== MIDDLEWARE ======================
 app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
 app.use(express.json({ limit: '10mb' }));
-// ... (Helmet ayarları aynı kalır) ...
+
+app.use(helmet({
+    frameguard: { action: 'deny' }, 
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"], 
+            scriptSrc: ["'self'", "'unsafe-inline'"], 
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            imgSrc: ["'self'", "data:", "https:"], 
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            connectSrc: ["'self'", "https://skyairdropbackend-1.onrender.com", "wss:"], 
+        }
+    }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // ====================== TELEGRAM WEBHOOK ROUTE ======================
@@ -40,9 +55,27 @@ app.post(`/bot${TOKEN}`, (req, res) => {
 app.use('/api', sentimentRoutes);
 app.use('/api', whaleRoutes);
 
-// ... (Diğer Endpointler aynı kalır) ...
+// Diğer Endpointler
+app.post('/verify-x', (req, res) => res.json({ success: true }));
+app.post('/save-tasks', async (req, res) => {
+  try {
+    await pool.query(`INSERT INTO airdrop_tasks (wallet, tasks) VALUES ($1, $2) ON CONFLICT (wallet) DO NOTHING`, [req.body.wallet, req.body.tasks]);
+    await pool.query(`UPDATE airdrop_stats SET participants = participants + 1 WHERE id = 1`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ message: 'DB Hatası' }); }
+});
 
-// ====================== BAŞLATMA (KRİTİK DEĞİŞİKLİK) ======================
+app.get('/get-tasks', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT tasks FROM airdrop_tasks WHERE wallet = $1', [req.query.wallet]);
+    res.json({ tasks: r.rows[0]?.tasks || [] });
+  } catch (e) { res.json({ tasks: [] }); }
+});
+
+app.get('/airdrop-stats', (req, res) => res.json({ participants: 1250, remaining: 3750 }));
+app.get('/', (req, res) => res.json({ status: 'OK', mode: process.env.RENDER_EXTERNAL_URL ? 'Webhook' : 'Polling' }));
+
+// ====================== BAŞLATMA (KRİTİK) ======================
 const server = app.listen(PORT, async () => {
   await initDB(); 
   console.log(`SKYL backend running on ${PORT}`);
@@ -67,4 +100,7 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
-// ... (Kapatma mantığı aynı kalır) ...
+// Kapatma
+process.on('SIGTERM', () => {
+  server.close(() => { pool.end(); process.exit(0); });
+});
