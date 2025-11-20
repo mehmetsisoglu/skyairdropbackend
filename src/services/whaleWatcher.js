@@ -1,3 +1,4 @@
+// src/services/whaleWatcher.js (Final Threshold Adjustment)
 import { ethers } from 'ethers';
 import { pool } from '../db.js';
 import 'dotenv/config';
@@ -6,7 +7,7 @@ import 'dotenv/config';
 const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_ABI = ["event Transfer(address indexed from, address indexed to, uint value)"];
 
-// Balina Eşiği: 10 BNB
+// KRİTİK DÜZELTME: Eşik Değeri 1000 BNB (Yaklaşık $620,000+)
 const WHALE_THRESHOLD = 1000.0; 
 let isWatching = false;
 
@@ -36,10 +37,8 @@ async function ensureWhaleTableExists() {
 export async function startWhaleWatcher() {
   if (isWatching) return;
 
-  // Önce tabloyu garantiye al
   await ensureWhaleTableExists();
   
-  // Public BSC Node (Websocket)
   const providerUrl = "wss://bsc-rpc.publicnode.com"; 
   
   console.log("🐋 Balina Avcısı Başlatılıyor...");
@@ -57,11 +56,11 @@ export async function startWhaleWatcher() {
         // Eşik kontrolü
         if (amountBNB >= WHALE_THRESHOLD) {
           const txHash = event.log.transactionHash;
-          const estUsd = amountBNB * 620; // Sabit kur (ileride API bağlanabilir)
+          const estUsd = amountBNB * 620; 
 
-          console.log(`🐋 WHALE ALERT: ${amountBNB.toFixed(2)} BNB`);
+          console.log(`🐋 MEGA WHALE ALERT: ${amountBNB.toFixed(2)} BNB yakalandı!`);
 
-          // DB Kayıt
+          // Veritabanına kaydet
           await pool.query(
             `INSERT INTO whale_alerts (tx_hash, from_address, to_address, amount, amount_usd)
              VALUES ($1, $2, $3, $4, $5)
@@ -74,11 +73,11 @@ export async function startWhaleWatcher() {
       }
     });
 
-    console.log(`✅ Balina Takibi Aktif (Limit: ${WHALE_THRESHOLD} BNB)`);
+    console.log(`✅ Balina Takibi Aktif (Eşik: ${WHALE_THRESHOLD} BNB)`);
 
-    // Bağlantı koparsa
+    // Bağlantı koparsa yeniden bağlan
     provider.websocket.on("close", () => {
-        console.log("⚠️ WSS Bağlantısı koptu, tekrar bağlanılıyor...");
+        console.log("⚠️ WSS Koptu, tekrar bağlanılıyor...");
         isWatching = false;
         setTimeout(startWhaleWatcher, 5000);
     });
