@@ -1,92 +1,85 @@
-// src/services/whaleWatcher.js (FINAL WHALE THRESHOLD)
+// src/services/whaleWatcher.js (WSS PUSH LOGIC)
 import { ethers } from 'ethers';
 import { pool } from '../db.js';
 import 'dotenv/config';
 
-// WBNB Kontrat Adresi (BSC)
 const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_ABI = ["event Transfer(address indexed from, address indexed to, uint value)"];
-
-// NİHAİ EŞİK DEĞERİ: 1000 BNB (Yaklaşık $620,000+)
 const WHALE_THRESHOLD = 1000.0; 
 let isWatching = false;
 
-export async function startWhaleWatcher() {
-  if (isWatching) return;
+// 1. OTOMATİK TABLO KURULUMU (Aynen Korundu)
+async function ensureWhaleTableExists() {
+  const query = `
+    CREATE TABLE IF NOT EXISTS whale_alerts (
+      id SERIAL PRIMARY KEY, tx_hash VARCHAR(255) UNIQUE, from_address VARCHAR(255), to_address VARCHAR(255),
+      amount DECIMAL(18, 2), amount_usd DECIMAL(18, 2), token_symbol VARCHAR(10) DEFAULT 'BNB', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  try { await pool.query(query); } catch (err) { console.error('❌ DB Hatası:', err.message); }
+}
 
+// 2. WSS AVCI (Artık WSS sunucusunu parametre olarak alıyor)
+export async function startWhaleWatcher(wss) {
+  if (isWatching) return;
   await ensureWhaleTableExists();
   
-  // Alchemy WSS Bağlantısı
   const providerUrl = process.env.BSC_WSS_URL; 
+  if (!providerUrl) { console.error("❌ BSC_WSS_URL ENV DEĞİŞKENİ GEREKLİ!"); return; }
   
-  if (!providerUrl) {
-      console.error("❌ BSC_WSS_URL ENV DEĞİŞKENİ GEREKLİ!");
-      return; 
-  }
-  
-  console.log("🐋 Balina Avcısı Başlatılıyor (Nihai Eşik)...");
+  console.log("🐋 Balina Avcısı Başlatılıyor (WSS PUSH)...");
   
   try {
     const provider = new ethers.WebSocketProvider(providerUrl);
     const contract = new ethers.Contract(WBNB_ADDRESS, WBNB_ABI, provider);
-
     isWatching = true;
 
     contract.on("Transfer", async (from, to, value, event) => {
       try {
         const amountBNB = parseFloat(ethers.formatEther(value));
 
-        // Eşik kontrolü
         if (amountBNB >= WHALE_THRESHOLD) {
           const txHash = event.log.transactionHash;
           const estUsd = amountBNB * 620; 
 
-          console.log(`🐋 MEGA WHALE ALERT: ${amountBNB.toFixed(2)} BNB yakalandı!`);
-
-          // Veritabanına kaydet
+          const alertData = {
+              amount: amountBNB,
+              amount_usd: estUsd,
+              from_address: from,
+              to_address: to,
+              tx_hash: txHash,
+              timestamp: new Date().toISOString()
+          };
+          
+          // 1. DB'ye Kaydet
           await pool.query(
             `INSERT INTO whale_alerts (tx_hash, from_address, to_address, amount, amount_usd)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (tx_hash) DO NOTHING`,
+             VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tx_hash) DO NOTHING`,
             [txHash, from, to, amountBNB, estUsd]
           );
+
+          // 2. FRONEND'E BROADCAST YAP
+          wss.clients.forEach(client => {
+              if (client.readyState === client.OPEN) {
+                  client.send(JSON.stringify({ type: 'WHALE_ALERT', data: alertData }));
+              }
+          });
+
+          console.log(`🐋 WSS PUSH: ${amountBNB.toFixed(2)} BNB gönderildi.`);
         }
-      } catch (err) {
-        console.error("Whale İşleme Hatası:", err.message);
-      }
+      } catch (err) { console.error("Whale Process Error:", err.message); }
     });
 
-    console.log(`✅ Balina Takibi Aktif (Eşik: ${WHALE_THRESHOLD} BNB)`);
-
-    // Bağlantı koparsa yeniden bağlan
+    console.log(`✅ WSS PUSH Aktif (Eşik: ${WHALE_THRESHOLD} BNB)`);
     provider.websocket.on("close", () => {
-        console.log("⚠️ WSS Koptu, Alchemy'e tekrar bağlanılıyor...");
+        console.log("⚠️ WSS Koptu, tekrar bağlanılıyor...");
         isWatching = false;
-        setTimeout(startWhaleWatcher, 5000);
+        setTimeout(() => startWhaleWatcher(wss), 5000); // WSS sunucusunu tekrar geçir
     });
 
   } catch (error) {
     console.error("❌ Balina Servisi Hatası:", error.message);
     isWatching = false;
-    setTimeout(startWhaleWatcher, 10000);
-  }
-}
-async function ensureWhaleTableExists() {
-  const query = `
-    CREATE TABLE IF NOT EXISTS whale_alerts (
-      id SERIAL PRIMARY KEY,
-      tx_hash VARCHAR(255) UNIQUE,
-      from_address VARCHAR(255),
-      to_address VARCHAR(255),
-      amount DECIMAL(18, 2),
-      amount_usd DECIMAL(18, 2),
-      token_symbol VARCHAR(10) DEFAULT 'BNB',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
-  try {
-    await pool.query(query);
-  } catch (err) {
-    console.error('❌ [Database] Tablo oluşturma hatası:', err.message);
+    setTimeout(() => startWhaleWatcher(wss), 10000);
   }
 }
