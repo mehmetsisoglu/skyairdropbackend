@@ -11,7 +11,7 @@ import { startSentimentLoop } from './cron/sentimentJob.js';
 import { startWhaleWatcher } from './services/whaleWatcher.js'; 
 import sentimentRoutes from './routes/sentimentRoutes.js';
 import whaleRoutes from './routes/whaleRoutes.js'; 
-import bot, { startTelegramBot } from './bot.js';
+import { startTelegramBot } from './bot.js';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
