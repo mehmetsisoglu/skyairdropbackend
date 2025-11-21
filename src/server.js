@@ -1,18 +1,14 @@
-// src/server.js (v6.1 – FINAL WSS FIX)
+// src/server.js (v6.3 – FINAL CRASH FIX: Whale Watcher Disabled)
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
 import helmet from 'helmet';
-
-// KRİTİK DÜZELTME: Sınıfı doğrudan çağırıyoruz
 import { WebSocketServer } from 'ws'; 
 
 import { pool, initDB } from './db.js'; 
 import { startSkylineSystem } from './buy-bot.js';
 import { startSentimentLoop } from './cron/sentimentJob.js';
-// Whale Watcher artık WSS sunucusunu almalı
 import { startWhaleWatcher } from './services/whaleWatcher.js'; 
-
 import sentimentRoutes from './routes/sentimentRoutes.js';
 import whaleRoutes from './routes/whaleRoutes.js'; 
 import bot, { startTelegramBot } from './bot.js';
@@ -21,8 +17,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-// ====================== WSS SUNUCUSU TANIMLAMA (FIX) ======================
-// Artık direkt sınıfı çağırıyoruz.
+// ====================== WSS SUNUCUSU TANIMLAMA ======================
 const wss = new WebSocketServer({ noServer: true }); 
 
 // ====================== MIDDLEWARE ======================
@@ -75,20 +70,20 @@ app.get('/get-tasks', async (req, res) => {
 app.get('/airdrop-stats', (req, res) => res.json({ participants: 1250, remaining: 3750 }));
 app.get('/', (req, res) => res.json({ status: 'OK', mode: process.env.RENDER_EXTERNAL_URL ? 'Webhook' : 'Polling' }));
 
-// ====================== BAŞLATMA (KRİTİK) ======================
+// ====================== BAŞLATMA (KRİTİK DÜZELTME) ======================
 const server = app.listen(PORT, async () => {
   await initDB(); 
   console.log(`SKYL backend running on ${PORT}`);
   
   await startTelegramBot(); 
   
-  // Whale Watcher'ı WSS sunucusu ile başlat
-  // startWhaleWatcher(wss); 
-  startSkylineSystem();      
-  startSentimentLoop();      
+  console.log("🚀 Skyline Logic Sistemleri...");
+  startSkylineSystem();      // BuyBot
+  startSentimentLoop();      // AI Haberler
+  // startWhaleWatcher(wss);  <-- ALCHEMY KISITLAMASI NEDENİYLE DEVRE DIŞI BIRAKILDI
 });
 
-// WSS BAĞLANTISINI HTTP SERVER'A BAĞLAMA
+// WSS BAĞLANTISINI HTTP SERVER'A BAĞLAMA (Whale Watcher kapalı olsa bile WSS sunucusu açıktır)
 server.on('upgrade', (request, socket, head) => {
   if (request.url === '/whales/live') {
     wss.handleUpgrade(request, socket, head, (ws) => {
