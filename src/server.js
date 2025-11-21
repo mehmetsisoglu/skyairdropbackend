@@ -83,7 +83,7 @@ const server = app.listen(PORT, async () => {
   await startTelegramBot(); 
   
   // Whale Watcher'ı WSS sunucusu ile başlat
-  startWhaleWatcher(wss); 
+  // startWhaleWatcher(wss); 
   startSkylineSystem();      
   startSentimentLoop();      
 });
