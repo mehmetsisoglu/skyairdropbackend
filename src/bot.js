@@ -1,65 +1,53 @@
-// src/bot.js (v26.0 – FULL SYSTEM: All Features Preserved + Webhook Support)
+// src/bot.js (v19.0 – FINAL STABLE: Stats Fix + Rank Fix + All Features)
 import TelegramBot from "node-telegram-bot-api";
 import dotenv from "dotenv";
 import OpenAI from "openai"; 
-import axios from "axios"; 
-import { pool } from "./db.js"; 
+import { pool } from "./db.js"; // Veritabanı bağlantısı
 
 dotenv.config();
 
-// --- API ANAHTARLARI VE AYARLAR ---
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim();
 const CHAT_ID = process.env.TELEGRAM_CHANNEL_ID?.trim();
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
-// Render'ın bize verdiği otomatik URL (Webhook için gerekli)
-const RENDER_URL = process.env.RENDER_EXTERNAL_URL; 
 
-// --- PROJE BİLGİLERİ ---
+// --- CONFIGURATION ---
 const TOKEN_CA = "0xa7c4436c2Cf6007Dd03c3067697553bd51562f2c"; 
 const BUY_LINK = "https://pancakeswap.finance/swap?outputCurrency=" + TOKEN_CA;
 const WEBSITE = "https://skyl.online/";
 const AIRDROP_PAGE = "https://skyl.online/airdrop/";
 
-// --- GÖRSELLER (Skyhawk Serisi) ---
+// --- IMAGES ---
 const IMG_WELCOME = "https://skyl.online/images/Skyhawk_Welcome.png"; 
 const IMG_RAID = "https://skyl.online/images/Skyhawk_Raid.png";
 const IMG_GOODBYE = "https://skyl.online/images/Skyhawk_Goodbye.png";
-const IMG_DEFAULT_BUY = "https://skyl.online/images/Skyhawk_Buy.png";
 
-// --- AI BAŞLATMA ---
+// --- AI SETUP ---
 let openai = null;
 if (OPENAI_KEY) {
     try {
         openai = new OpenAI({ apiKey: OPENAI_KEY });
-        console.log("[bot.js] OpenAI (ChatGPT) Aktif.");
-    } catch (e) { 
-        console.error("[bot.js] OpenAI Başlatılamadı:", e.message); 
-    }
+        console.log("[bot.js] OpenAI Enabled.");
+    } catch (e) { console.error("OpenAI Init Error:", e.message); }
 }
 
-// --- HAFIZA VE LİMİTLER ---
+// --- MEMORY & LIMITS ---
 const userCooldowns = new Map();
 const captchaPending = new Map(); 
-const SPAM_LIMIT_SECONDS = 3; 
+const SPAM_LIMIT_SECONDS = 4;
 
-// --- BOT NESNESİ OLUŞTURMA ---
 let bot = null;
+
 if (!TOKEN) {
-  console.warn("[bot.js] UYARI: Telegram Token eksik!");
+  console.warn("[bot.js] Token missing! Bot could not start.");
 } else {
-  // ⚠️ KRİTİK: Polling'i 'false' yapıyoruz.
-  // Eğer Render'daysak Webhook, Local'deysek Polling'i manuel açacağız.
-  bot = new TelegramBot(TOKEN, { 
-      polling: false,
-      request: { agentOptions: { keepAlive: true, family: 4 } }
-  }); 
-  console.log("[bot.js] Bot nesnesi oluşturuldu (Bekleme Modu).");
+  // ⚠️ POLLING FALSE: Başlangıçta kapalı (buy-bot.js başlatacak)
+  bot = new TelegramBot(TOKEN, { polling: false }); 
+  console.log("[bot.js] Bot instance created (Idle Mode).");
 }
 
-// HTML Karakterlerini Temizleme
 const escape = (str) => String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// --- SPAM KONTROL ---
+// --- SPAM CHECK ---
 const checkSpam = (userId) => {
     const currentTime = Date.now();
     if (userCooldowns.has(userId)) {
@@ -70,77 +58,66 @@ const checkSpam = (userId) => {
     return false;
 };
 
-// --- FUD KONTROLÜ (Gelişmiş) ---
-const isFud = (text) => {
-    const normalized = text.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const fudWords = ["scam", "rug", "honeypot", "fake", "cantdraining", "slowrug", "cantdrain"];
-    return fudWords.some(w => normalized.includes(w));
-};
-
-// --- RANK SİSTEMİ: XP GÜNCELLEME ---
-const updateRank = async (userId, firstName, username) => {
+// --- RANK SYSTEM: UPDATE XP ---
+const updateRank = async (userId, username) => {
     try {
-        const displayName = username || firstName || 'User';
-        await pool.query(`
+        // Kullanıcı yoksa oluştur, varsa XP artır
+        const res = await pool.query(`
             INSERT INTO user_ranks (user_id, username, xp, level) 
             VALUES ($1, $2, 1, 'Cadet') 
             ON CONFLICT (user_id) DO UPDATE 
             SET xp = user_ranks.xp + 1, username = $2
-        `, [userId, displayName]);
+            RETURNING xp
+        `, [userId, username || 'User']);
 
-        const res = await pool.query('SELECT xp FROM user_ranks WHERE user_id = $1', [userId]);
-        const xp = res.rows[0]?.xp || 0;
-        
+        const xp = res.rows[0].xp;
         let newLevel = 'Cadet';
+        
+        // Rütbe Kuralları
         if (xp > 50) newLevel = 'Pilot ✈️';
         if (xp > 200) newLevel = 'Sky Commander 🦅';
         if (xp > 500) newLevel = 'Legend 🌟';
         if (xp > 1000) newLevel = 'Sky God ⚡';
 
+        // Seviye güncellemesi
         await pool.query('UPDATE user_ranks SET level = $1 WHERE user_id = $2', [newLevel, userId]);
+        
     } catch (e) { 
-        console.error("Rank Update Error:", e.message); 
+        // Hata durumunda sessiz kal
     }
 };
 
 // ====================================================
-//       AKILLI BAŞLATMA (WEBHOOK vs POLLING)
+//       SYSTEM STARTUP (Conflict Prevention)
 // ====================================================
 export const startTelegramBot = async () => {
     if (!bot) return;
     
     try {
-        // Önce eski webhook veya polling çakışmalarını temizle
+        // Eski webhook varsa temizle
         await bot.deleteWebHook();
-        console.log("[bot.js] Webhook temizlendi.");
+        console.log("[bot.js] Webhook cleared.");
 
-        // Eğer RENDER üzerindeysek (Canlı Sunucu) -> WEBHOOK KULLAN
-        if (RENDER_URL) {
-            const webhookUrl = `${RENDER_URL}/bot${TOKEN}`;
-            console.log(`[bot.js] 🌍 PRODUCTION MODU: Webhook ayarlanıyor...`);
-            console.log(`[bot.js] Hedef URL: ${webhookUrl}`);
-            
-            await bot.setWebHook(webhookUrl);
-            console.log("[bot.js] ✅ Webhook başarıyla kuruldu. 409 Hatası Bitti.");
-        } 
-        // Eğer LOCAL üzerindeysek (Kendi Bilgisayarın) -> POLLING KULLAN
-        else {
-            console.log("[bot.js] 💻 LOCAL MOD: Polling başlatılıyor...");
+        // Polling'i manuel başlat
+        if (!bot.isPolling()) {
             await bot.startPolling();
-            console.log("[bot.js] ✅ Polling aktif.");
+            console.log("[bot.js] ✅ Polling Started Successfully.");
         }
-
     } catch (error) {
-        console.error("[bot.js] Başlatma Hatası:", error.message);
+        if (error.code === 'ETELEGRAM' && error.message.includes('409')) {
+             console.warn("[bot.js] ⚠️ Conflict detected (Another instance running).");
+        } else {
+             console.error("[bot.js] Startup Error:", error.message);
+        }
     }
 };
 
 // ====================================================
-//           KOMUTLAR VE MANTIK
+//           COMMANDS & LOGIC
 // ====================================================
 if (bot) {
     
-    // 1. /help
+    // 1. /help COMMAND
     bot.onText(/\/help/, (msg) => {
         if (checkSpam(msg.from.id)) return;
         const helpMsg = `
@@ -165,74 +142,59 @@ if (bot) {
         bot.sendMessage(msg.chat.id, helpMsg, { parse_mode: 'Markdown' });
     });
 
-    // 2. /stats (Axios ile Güvenli)
+    // 2. /stats COMMAND (FIXED: Uses PAIR ADDRESS)
     bot.onText(/\/stats/, async (msg) => {
         if (checkSpam(msg.from.id)) return;
         const chatId = msg.chat.id;
         const pairAddress = process.env.PANCAKESWAP_PAIR_ADDRESS;
 
         try {
-            let pair = null;
-            if (pairAddress) {
-                const res1 = await axios.get(`https://api.dexscreener.com/latest/dex/pairs/bsc/${pairAddress}`);
-                if (res1.data.pairs && res1.data.pairs[0]) pair = res1.data.pairs[0];
-            }
-            if (!pair) {
-                const res2 = await axios.get(`https://api.dexscreener.com/latest/dex/tokens/${TOKEN_CA}`);
-                if (res2.data.pairs && res2.data.pairs[0]) pair = res2.data.pairs[0];
-            }
+            // DexScreener Pair Endpoint kullanılıyor (Daha güvenilir)
+            const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/bsc/${pairAddress}`);
+            const data = await res.json();
+            const pair = data.pair || (data.pairs && data.pairs[0]);
 
-            if (!pair) {
-                return bot.sendMessage(chatId, "⚠️ *Data Syncing:* Please try again in a few minutes.", { parse_mode: 'Markdown' });
-            }
-
-            const price = pair.priceUsd || '0';
-            const liquidity = pair.liquidity?.usd ? pair.liquidity.usd.toLocaleString() : '0';
-            const fdv = pair.fdv ? pair.fdv.toLocaleString() : '0';
-            const change = pair.priceChange?.h24 || '0';
-            const volume = pair.volume?.h24 ? pair.volume.h24.toLocaleString() : '0';
+            if (!pair) return bot.sendMessage(chatId, "⚠️ *Data Not Found:* Liquidity might be low or API is syncing.", { parse_mode: 'Markdown' });
 
             const statsMsg = `
 📊 *Skyline Logic ($SKYL) Live Stats*
 
-💰 *Price:* $${price}
-💧 *Liquidity:* $${liquidity}
-🦅 *FDV:* $${fdv}
-📉 *24h Change:* ${change}%
-🔄 *Volume (24h):* $${volume}
+💰 *Price:* $${pair.priceUsd}
+💧 *Liquidity:* $${pair.liquidity?.usd?.toLocaleString() || '0'}
+🦅 *FDV:* $${pair.fdv?.toLocaleString() || '0'}
+📉 *24h Change:* ${pair.priceChange?.h24 || '0'}%
+🔄 *Volume (24h):* $${pair.volume?.h24?.toLocaleString() || '0'}
 
 🔗 [View on DexScreener](${pair.url})
             `;
             bot.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown', disable_web_page_preview: true });
-
         } catch (e) {
-            console.error("Stats API Error:", e.message);
-            bot.sendMessage(chatId, "⚠️ Market data currently unavailable.");
+            console.error("Stats Error:", e);
+            bot.sendMessage(chatId, "⚠️ Market data service unavailable.");
         }
     });
 
-    // 3. /rank
+    // 3. /rank COMMAND (FIXED: Uses String ID)
     bot.onText(/\/rank/, async (msg) => {
         if (checkSpam(msg.from.id)) return;
+        
+        // FIX: ID string'e çevrildi
         const userId = msg.from.id.toString();
 
         try {
             const res = await pool.query('SELECT * FROM user_ranks WHERE user_id = $1', [userId]);
-            
-            if (res.rows.length === 0) {
-                await updateRank(userId, msg.from.first_name, msg.from.username);
-                return bot.sendMessage(msg.chat.id, "🆕 Profile created! Type /rank again to see stats.");
-            }
+            if (res.rows.length === 0) return bot.sendMessage(msg.chat.id, "You have no rank yet. Start chatting!");
             
             const { xp, level } = res.rows[0];
             bot.sendMessage(msg.chat.id, `🎖 *Your Rank Card*\n\n👤 User: ${msg.from.first_name}\n🔰 Level: *${level}*\n✨ XP: *${xp}*`, { parse_mode: 'Markdown' });
-
         } catch (e) { 
-            bot.sendMessage(msg.chat.id, "⚠️ Database syncing. Try again shortly."); 
+            // Hata durumunda log bas ama kullanıcıya yansıtma
+            console.error("Rank Cmd Error:", e.message);
+            bot.sendMessage(msg.chat.id, "⚠️ Database is waking up. Try again in 1 min."); 
         }
     });
 
-    // 4. /ask (AI + Offline Fallback)
+    // 4. /ask COMMAND (AI)
     bot.onText(/\/ask (.+)/, async (msg, match) => {
         if (checkSpam(msg.from.id)) return;
         const question = match[1];
@@ -243,36 +205,28 @@ if (bot) {
             try {
                 const completion = await openai.chat.completions.create({
                     messages: [
-                        { role: "system", content: "You are Hyper Logic AI ($SKYL). Professional, futuristic, strict English. Concise answers." },
+                        { role: "system", content: "You are Skyhawk, the mascot and AI assistant of Skyline Logic ($SKYL). You are helpful, futuristic, and bullish on BSC." },
                         { role: "user", content: question }
                     ],
-                    model: "gpt-4o-mini",
+                    model: "gpt-3.5-turbo",
                 });
                 bot.sendMessage(chatId, completion.choices[0].message.content, { parse_mode: 'Markdown' });
             } catch (e) {
-                handleOfflineAI(chatId, question);
+                bot.sendMessage(chatId, "⚠️ AI Brain overload. Try again later.");
             }
         } else {
-            handleOfflineAI(chatId, question);
+            const aiKnowledgeBase = [
+                { keys: ["contract", "ca"], answer: `Contract: \`${TOKEN_CA}\`` },
+                { keys: ["buy", "pancake"], answer: `Buy here: [Link](${BUY_LINK})` },
+                { keys: ["airdrop"], answer: `Claim here: ${AIRDROP_PAGE}` }
+            ];
+            const found = aiKnowledgeBase.find(item => item.keys.some(k => question.toLowerCase().includes(k)));
+            const resp = found ? found.answer : `I am still learning. Check our website: ${WEBSITE}`;
+            bot.sendMessage(chatId, resp, { parse_mode: 'Markdown' });
         }
     });
 
-    const handleOfflineAI = (chatId, question) => {
-        const lowerQ = question.toLowerCase();
-        const knowledgeBase = [
-            { keys: ["contract", "ca", "address"], answer: `💎 *Contract:* \`${TOKEN_CA}\`` },
-            { keys: ["buy", "pancake", "swap"], answer: `🛒 *Buy here:* [PancakeSwap](${BUY_LINK})` },
-            { keys: ["airdrop", "claim"], answer: `🎁 *Claim here:* ${AIRDROP_PAGE}` },
-            { keys: ["tax", "slippage"], answer: `💸 *Tax:* 0% Buy / 0% Sell` },
-            { keys: ["lock", "lp"], answer: `🔒 *Liquidity:* Locked for 5 Years.` },
-            { keys: ["roadmap", "plan"], answer: `🗺 *Roadmap:* Launch → AI Dashboard → Staking → Tier 1 CEX.` }
-        ];
-        const found = knowledgeBase.find(item => item.keys.some(k => lowerQ.includes(k)));
-        const resp = found ? found.answer : `🤖 AI Offline. Visit: ${WEBSITE}`;
-        bot.sendMessage(chatId, resp, { parse_mode: 'Markdown' });
-    };
-
-    // 5. Temel Komutlar
+    // 5. STANDARD COMMANDS
     bot.onText(/\/ca/, (msg) => {
         if (checkSpam(msg.from.id)) return;
         bot.sendMessage(msg.chat.id, `💎 *Contract:* \`${TOKEN_CA}\`\n_(Tap to copy)_`, { parse_mode: 'Markdown' });
@@ -289,149 +243,157 @@ if (bot) {
 
     bot.onText(/\/(socials|site|links)/, (msg) => {
         if (checkSpam(msg.from.id)) return;
-        const message = `🌐 *Official Links*\n\n🌍 [Website](${WEBSITE})\n🐦 [X (Twitter)](https://x.com/SkylineLogicAI)\n✈️ [Telegram](https://t.me/SkylineLogicChat)`;
+        const message = `
+🌐 *Skyline Logic Official Links*
+
+🌍 [Website](${WEBSITE})
+🐦 [X (Twitter)](https://x.com/SkylineLogicAI)
+✈️ [Telegram](https://t.me/SkylineLogicChat)
+📸 [Instagram](https://www.instagram.com/skyline.logic)
+        `;
         bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
     });
 
-    // 6. Admin: Raid (DM Korumalı)
+    // 6. ADMIN: RAID & ANNOUNCE
     bot.onText(/\/raid (.+)/, async (msg, match) => {
         const chatId = msg.chat.id;
-        if (msg.chat.type === "private") return bot.sendMessage(chatId, "⚠️ Group only.");
-        
-        const url = match[1].trim();
-        if (!url.includes("twitter.com") && !url.includes("x.com")) {
-            return bot.sendMessage(chatId, "❌ Invalid raid link. Use Twitter/X.");
-        }
-
+        const userId = msg.from.id;
         try {
-            const member = await bot.getChatMember(chatId, msg.from.id);
+            const member = await bot.getChatMember(chatId, userId);
             if (!['creator', 'administrator'].includes(member.status)) return;
             
             bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
             await bot.sendPhoto(chatId, IMG_RAID, {
                 caption: `🚨 *SKYLINE RAID ALERT*\n\n👇 *SMASH THIS TWEET* 👇`,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[{ text: '⚔️ ATTACK NOW ⚔️', url }]] }
+                reply_markup: { inline_keyboard: [[{ text: '⚔️ ATTACK NOW ⚔️', url: match[1] }]] }
             });
         } catch (e) {}
     });
 
-    // 7. Admin: Announce (DM Korumalı + Regex Fix)
-    bot.onText(/\/announce(?:\s+([\s\S]+))?/, async (msg, match) => {
+    bot.onText(/\/announce([\s\S]+)/, async (msg, match) => {
         const chatId = msg.chat.id;
-        if (msg.chat.type === "private") return bot.sendMessage(chatId, "⚠️ Group only.");
-
-        const content = match[1];
-        if (!content) return bot.sendMessage(chatId, "⚠️ Usage: `/announce Your Message`", {parse_mode: 'Markdown'});
-
+        const userId = msg.from.id;
         try {
-            const member = await bot.getChatMember(chatId, msg.from.id);
-            if (!['creator', 'administrator'].includes(member.status)) return;
-
+            const member = await bot.getChatMember(chatId, userId);
+            if (!['creator', 'administrator'].includes(member.status)) {
+                return bot.sendMessage(chatId, "⛔ Only admins can use this command.");
+            }
             bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
-            const announcement = `📢 *ANNOUNCEMENT*\n\n${content.trim()}\n\n🚀 *$SKYL Team*`;
+            const announcement = `📢 *ANNOUNCEMENT*\n\n${match[1].trim()}\n\n🚀 *$SKYL Team*`;
             await bot.sendMessage(chatId, announcement, { parse_mode: 'Markdown' });
         } catch (e) {}
     });
 
-    // 8. Mesaj Dinleyici (FUD + Rank)
+    // 7. MESSAGE LISTENER (XP + Auto-Mod)
     bot.on('message', async (msg) => {
+        // Komutları ve botları yoksay
         if (!msg.text || msg.text.startsWith('/') || msg.from.is_bot) return;
-        await updateRank(msg.from.id.toString(), msg.from.first_name, msg.from.username);
+        
+        // FIX: ID string'e çevrildi
+        await updateRank(msg.from.id.toString(), msg.from.username || msg.from.first_name);
 
-        if (isFud(msg.text)) {
+        // Auto-Mod
+        const text = msg.text.toLowerCase();
+        if (["scam", "rug", "honeypot", "fake"].some(w => text.includes(w))) {
              bot.deleteMessage(msg.chat.id, msg.message_id).catch(()=>{});
-             bot.sendMessage(msg.chat.id, "🚫 *Warning:* FUD is not tolerated.", { parse_mode: 'Markdown' });
+             bot.sendMessage(msg.chat.id, "🚫 *No FUD allowed!* Trust the Logic.", { parse_mode: 'Markdown' });
+        }
+        if (text.includes("moon") || text.includes("lambo")) {
+             bot.sendMessage(msg.chat.id, "🚀 *To the Sky!* $SKYL taking off.", { parse_mode: 'Markdown' });
         }
     });
 
-    // 9. Hoş Geldin + Captcha (Güvenli Permissions)
+    // 8. WELCOME + CAPTCHA
     bot.on('new_chat_members', async (msg) => {
         const chatId = msg.chat.id;
         for (const member of msg.new_chat_members) {
             if (member.is_bot) continue;
-            
-            try { await bot.restrictChatMember(chatId, member.id, { permissions: { can_send_messages: false } }); } catch (e) {}
+            try { await bot.restrictChatMember(chatId, member.id, { can_send_messages: false }); } catch (e) {}
 
             const n1 = Math.floor(Math.random()*5)+1, n2 = Math.floor(Math.random()*5)+1;
             const ans = n1+n2;
             const opts = [
-                { text: `${n1}+${n2}=${ans}`, callback_data: `cap|ok|${member.id}` },
-                { text: `${n1}+${n2}=${ans+1}`, callback_data: `cap|no|${member.id}` }
+                { text: `${n1}+${n2}=${ans}`, callback_data: `cap_ok_${member.id}` },
+                { text: `${n1}+${n2}=${ans+1}`, callback_data: `cap_no_${member.id}` }
             ].sort(()=>Math.random()-0.5);
 
             const sent = await bot.sendPhoto(chatId, IMG_WELCOME, {
-                caption: `👋 *Welcome, ${member.first_name}!*\n\nProve you are human:\n*Solve:* ${n1} + ${n2} = ?`,
+                caption: `👋 *Welcome, ${member.first_name}!*\n\nTo chat in *Skyline Logic*, please prove you are human.\n*Solve:* ${n1} + ${n2} = ?`,
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: [opts] }
             });
-            
-            captchaPending.set(member.id.toString(), sent.message_id);
-            setTimeout(()=>{ 
-                const key = member.id.toString();
-                if(captchaPending.has(key)) {
-                    bot.deleteMessage(chatId, sent.message_id).catch(()=>{});
-                    captchaPending.delete(key);
-                }
-            }, 60000);
+            captchaPending.set(member.id, sent.message_id);
+            setTimeout(()=>{ if(captchaPending.has(member.id)) bot.deleteMessage(chatId, sent.message_id).catch(()=>{}); }, 60000);
         }
     });
 
-    // 10. Captcha Doğrulama
+    // 9. CAPTCHA CALLBACK
     bot.on('callback_query', async (q) => {
-        if (!q.data || !q.data.startsWith('cap')) return;
-        const parts = q.data.split('|');
-        const status = parts[1];
-        const id = parts[2];
-
-        if (String(q.from.id) !== String(id)) return bot.answerCallbackQuery(q.id, {text:"Not for you!", show_alert:true});
-
+        const [type, status, id] = q.data.split('_'); 
+        if (type !== 'cap') return;
+        if (q.from.id != id) return bot.answerCallbackQuery(q.id, {text:"Not for you!", show_alert:true});
+        
         if (status === 'ok') {
-            try { await bot.restrictChatMember(q.message.chat.id, id, { permissions: { can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true, can_add_web_page_previews: true } }); } catch(e){}
+            try { await bot.restrictChatMember(q.message.chat.id, id, { 
+                can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true, can_add_web_page_previews: true 
+            }); } catch(e){}
+            
             await bot.answerCallbackQuery(q.id, {text:"Verified!"});
             bot.deleteMessage(q.message.chat.id, q.message.message_id).catch(()=>{});
-            captchaPending.delete(id);
-            bot.sendMessage(q.message.chat.id, `✅ Verified! Welcome, ${q.from.first_name}.`, { disable_notification: true });
+            bot.sendMessage(q.message.chat.id, `✅ Verified! Welcome to the community.`, { disable_notification: true });
         } else {
             bot.answerCallbackQuery(q.id, {text:"Wrong answer!", show_alert:true});
         }
     });
 
-    // 11. Veda
+    // 10. GOODBYE MESSAGE
     bot.on('left_chat_member', async (msg) => {
         const chatId = msg.chat.id;
         const leftMember = msg.left_chat_member;
         if (leftMember.is_bot) return;
-        try { await bot.sendPhoto(chatId, IMG_GOODBYE, { caption: `👋 Goodbye, ${leftMember.first_name}.`, parse_mode: 'Markdown' }); } 
-        catch (e) {}
+
+        const goodbyeCaption = `
+👋 *Goodbye, ${leftMember.first_name}...*
+
+You have disconnected from the Skyline Logic network.
+We hope to see you flying with us again.
+
+🦅 _Skyhawk is watching the horizon._
+        `;
+        try { await bot.sendPhoto(chatId, IMG_GOODBYE, { caption: goodbyeCaption, parse_mode: 'Markdown' }); } 
+        catch (e) { bot.sendMessage(chatId, goodbyeCaption, { parse_mode: 'Markdown' }); }
     });
 }
 
 // ====================================================
-//             BUY BOT BİLDİRİMLERİ
+//             EXPORTS (NOTIFICATION SYSTEM)
 // ====================================================
 export const sendBuyDetected = async (amountSKYL, costWBNB, wallet, txHash, imageURL) => {
   if (!bot || !CHAT_ID) return;
+  
   const txt = `
 $SKYL Buy Detected!
 <b>Amount:</b> ${parseFloat(amountSKYL).toFixed(0)} $SKYL
 <b>Cost:</b> ${parseFloat(costWBNB).toFixed(4)} BNB
 <b>Wallet:</b> <code>${escape(wallet.slice(0,6)+'...'+wallet.slice(-4))}</code>
 <a href="https://bscscan.com/tx/${escape(txHash)}">View on BscScan</a>`.trim();
-  let finalImg = IMG_DEFAULT_BUY;
-  if (imageURL && imageURL.startsWith("http")) finalImg = imageURL;
-  try { await bot.sendPhoto(CHAT_ID, finalImg, { caption: txt, parse_mode: "HTML" }); } catch (e) {}
+
+  const finalImg = imageURL || "https://skyl.online/images/Skyhawk_Buy.png";
+
+  try { await bot.sendPhoto(CHAT_ID, finalImg, { caption: txt, parse_mode: "HTML" }); } 
+  catch (e) { console.error("Buy Alert Error:", e.message); }
 };
 
 export const sendAirdropClaim = async ({ wallet, amount }) => {
   if (!bot || !CHAT_ID) return;
+  
   const txt = `
 $SKYL Airdrop Claim!
 <b>Amount:</b> ${parseFloat(amount).toLocaleString()} $SKYL
 <b>Wallet:</b> <code>${escape(wallet)}</code>
 <a href="https://bscscan.com/address/${escape(wallet)}">View on BscScan</a>`.trim();
-  try { await bot.sendPhoto(CHAT_ID, "https://skyl.online/images/Skyhawk_Airdrop.png", { caption: txt, parse_mode: "HTML" }); } catch (e) {}
+  
+  try { await bot.sendPhoto(CHAT_ID, "https://skyl.online/images/Skyhawk_Airdrop.png", { caption: txt, parse_mode: "HTML" }); } 
+  catch (e) { console.error("Airdrop Alert Error:", e.message); }
 };
-
-// SERVER.JS İÇİN DIŞA AKTAR (KRİTİK)
-export default bot;
