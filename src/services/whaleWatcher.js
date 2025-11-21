@@ -7,8 +7,8 @@ import 'dotenv/config';
 const WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 const WBNB_ABI = ["event Transfer(address indexed from, address indexed to, uint value)"];
 
-// EŞİK DEĞERİ: 1000 BNB
-const WHALE_THRESHOLD = 1000.0; 
+// EŞİK DEĞERİ: 5000 BNB
+const WHALE_THRESHOLD = 5000.0; 
 let isWatching = false;
 
 // 1. VERİTABANI KURULUMU (Tek Tanım)
